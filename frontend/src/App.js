@@ -699,7 +699,7 @@ function App() {
                     
                     {paymentForm.payment_type === 'donation' && (
                       <div>
-                        <Label htmlFor="amount">Donation Amount ($)</Label>
+                        <Label htmlFor="amount">Donation Amount (₺)</Label>
                         <Input
                           id="amount"
                           type="number"
@@ -707,7 +707,7 @@ function App() {
                           min="1"
                           value={paymentForm.amount}
                           onChange={(e) => setPaymentForm({...paymentForm, amount: parseFloat(e.target.value)})}
-                          placeholder="Enter amount"
+                          placeholder="Enter amount in Turkish Lira"
                           required
                         />
                       </div>
