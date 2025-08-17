@@ -247,8 +247,8 @@ async def update_debate(debate_id: str, debate_update: DebateCreate, current_adm
 async def delete_debate(debate_id: str, current_admin: str = Depends(get_current_admin)):
     result = await db.debates.delete_one({"id": debate_id})
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Tartışma bulunamadı")
-    return {"message": "Tartışma başarıyla silindi"}
+        raise HTTPException(status_code=404, detail="Münazara bulunamadı")
+    return {"message": "Münazara başarıyla silindi"}
 
 # Push notification endpoints
 @api_router.post("/notifications/subscribe")
