@@ -1058,7 +1058,7 @@ function App() {
                     </div>
                     <Button type="submit" className="bg-red-600 hover:bg-red-700">
                       <Plus className="h-4 w-4 mr-2" />
-                      Tartışma Oluştur
+                      Münazara Oluştur
                     </Button>
                   </form>
                 </CardContent>
