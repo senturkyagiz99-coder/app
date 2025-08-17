@@ -690,7 +690,7 @@ function App() {
                       >
                         {Object.entries(paymentPackages).map(([key, pkg]) => (
                           <option key={key} value={key}>
-                            {pkg.description} - ${pkg.amount}
+                            {pkg.description} - ₺{pkg.amount}
                           </option>
                         ))}
                         <option value="donation">Custom Donation</option>
