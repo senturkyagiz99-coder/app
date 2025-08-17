@@ -662,7 +662,7 @@ def main():
         tester.test_join_debate,
         tester.test_create_comment,
         tester.test_get_comments,
-        # New photo and payment tests
+        # Photo and payment tests
         tester.test_get_payment_packages,
         tester.test_get_photos,
         tester.test_photo_upload_unauthorized,
@@ -671,6 +671,11 @@ def main():
         tester.test_payment_session_authorized,
         tester.test_payment_transactions_unauthorized,
         tester.test_payment_transactions_authorized,
+        # Notification system tests
+        tester.test_notification_subscribe,
+        tester.test_notification_unsubscribe,
+        tester.test_notification_send_unauthorized,
+        tester.test_notification_send_authorized,
     ]
     
     # Run all tests
