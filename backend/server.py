@@ -115,7 +115,7 @@ class PaymentTransaction(BaseModel):
     session_id: str
     payment_type: str  # "membership", "event_registration", "donation"
     amount: float
-    currency: str = "usd"
+    currency: str = "try"
     payment_status: str = "pending"
     metadata: Dict[str, str] = {}
     created_at: datetime = Field(default_factory=datetime.utcnow)
