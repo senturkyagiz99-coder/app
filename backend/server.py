@@ -322,7 +322,7 @@ async def vote_on_debate(vote: VoteRequest):
     vote_text = "lehinde" if vote.vote_type == "for" else "aleyhinde"
     await send_push_notification(NotificationPayload(
         title="Yeni Oy!",
-        body=f"'{debate['title']}' tartışmasında {vote_text} yeni oy",
+        body=f"'{debate['title']}' münazarasında {vote_text} yeni oy",
         url="/"
     ))
     
