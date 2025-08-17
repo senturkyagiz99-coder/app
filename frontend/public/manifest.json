@@ -1,7 +1,7 @@
 {
-  "short_name": "Debate Club",
-  "name": "Debate Club Management App",
-  "description": "A comprehensive platform for managing debate club activities, voting, and events",
+  "short_name": "Tartışma Kulübü",
+  "name": "Tartışma Kulübü Yönetim Uygulaması",
+  "description": "Tartışma kulübü aktivitelerini, oylamaları ve etkinlikleri yönetmek için kapsamlı platform",
   "icons": [
     {
       "src": "icon-192x192.png",
@@ -22,7 +22,7 @@
   "background_color": "#fef7f7",
   "orientation": "portrait-primary",
   "scope": "/",
-  "categories": ["education", "social", "productivity"],
-  "lang": "en-US",
+  "categories": ["eğitim", "sosyal", "verimlilik"],
+  "lang": "tr-TR",
   "dir": "ltr"
 }
