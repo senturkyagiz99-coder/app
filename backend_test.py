@@ -508,6 +508,110 @@ class DebateClubAPITester:
             return True
         return False
 
+    def test_notification_subscribe(self):
+        """Test push notification subscription"""
+        subscription_data = {
+            "endpoint": "https://fcm.googleapis.com/fcm/send/test-endpoint-123",
+            "keys": {
+                "p256dh": "test-p256dh-key",
+                "auth": "test-auth-key"
+            }
+        }
+        
+        success, response = self.run_test(
+            "Push Notification Subscribe",
+            "POST",
+            "notifications/subscribe",
+            200,
+            data=subscription_data
+        )
+        
+        if success and 'message' in response:
+            expected_messages = ["Bildirim aboneliği başarıyla oluşturuldu", "Zaten abone olunmuş"]
+            if response['message'] in expected_messages:
+                print(f"   ✅ Turkish message: {response['message']}")
+                return True
+            else:
+                print(f"   ❌ Unexpected message: {response['message']}")
+                return False
+        return False
+
+    def test_notification_unsubscribe(self):
+        """Test push notification unsubscription"""
+        endpoint = "https://fcm.googleapis.com/fcm/send/test-endpoint-123"
+        
+        success, response = self.run_test(
+            "Push Notification Unsubscribe",
+            "DELETE",
+            f"notifications/unsubscribe/{endpoint}",
+            200
+        )
+        
+        if success and 'message' in response:
+            expected_messages = ["Bildirim aboneliği iptal edildi", "Abonelik bulunamadı"]
+            if response['message'] in expected_messages:
+                print(f"   ✅ Turkish message: {response['message']}")
+                return True
+            else:
+                print(f"   ❌ Unexpected message: {response['message']}")
+                return False
+        return False
+
+    def test_notification_send_unauthorized(self):
+        """Test manual notification sending without admin token"""
+        # Temporarily remove token
+        original_token = self.token
+        self.token = None
+        
+        notification_data = {
+            "title": "Test Notification",
+            "body": "This is a test notification",
+            "icon": "/icon-192x192.png",
+            "url": "/"
+        }
+        
+        success, _ = self.run_test(
+            "Send Manual Notification (Unauthorized)",
+            "POST",
+            "notifications/send",
+            401,
+            data=notification_data
+        )
+        
+        # Restore token
+        self.token = original_token
+        return success
+
+    def test_notification_send_authorized(self):
+        """Test manual notification sending with admin token"""
+        if not self.token:
+            print("❌ No admin token available for notification send test")
+            return False
+            
+        notification_data = {
+            "title": "Test Bildirim",
+            "body": "Bu bir test bildirimidir",
+            "icon": "/icon-192x192.png",
+            "url": "/"
+        }
+        
+        success, response = self.run_test(
+            "Send Manual Notification (Authorized)",
+            "POST",
+            "notifications/send",
+            200,
+            data=notification_data
+        )
+        
+        if success and 'message' in response:
+            if response['message'] == "Bildirim gönderildi":
+                print(f"   ✅ Turkish message: {response['message']}")
+                return True
+            else:
+                print(f"   ❌ Unexpected message: {response['message']}")
+                return False
+        return False
+
     def test_unauthorized_create_debate(self):
         """Test creating debate without admin token"""
         # Temporarily remove token
