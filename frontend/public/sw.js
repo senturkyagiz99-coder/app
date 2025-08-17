@@ -1,5 +1,5 @@
-// Tartışma Kulübü PWA için Service Worker
-const CACHE_NAME = 'tartisma-kulubu-v1';
+// Münazara Kulübü PWA için Service Worker
+const CACHE_NAME = 'munazara-kulubu-v1';
 const urlsToCache = [
   '/',
   '/static/js/bundle.js',
