@@ -615,7 +615,7 @@ function App() {
                           type="password"
                           value={loginForm.password}
                           onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
-                          placeholder="debateclub123"
+                          placeholder="onlinedebate"
                           required
                         />
                       </div>
