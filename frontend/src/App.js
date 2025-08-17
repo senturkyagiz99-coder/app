@@ -362,7 +362,7 @@ function App() {
       return;
     }
     if (!isOnline) {
-      alert('Tartışmaya katılmak için çevrimiçi olmanız gerekir');
+      alert('Münazaraya katılmak için çevrimiçi olmanız gerekir');
       return;
     }
     try {
@@ -372,9 +372,9 @@ function App() {
       });
       setJoinForm({ participant_name: '' });
       fetchDebates();
-      alert('Tartışmaya başarıyla katıldınız!');
+      alert('Münazaraya başarıyla katıldınız!');
     } catch (error) {
-      alert(error.response?.data?.detail || 'Tartışmaya katılırken hata');
+      alert(error.response?.data?.detail || 'Münazaraya katılırken hata');
     }
   };
 
