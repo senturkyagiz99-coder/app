@@ -2,6 +2,8 @@ import requests
 import sys
 from datetime import datetime, timedelta
 import json
+import io
+import os
 
 class DebateClubAPITester:
     def __init__(self, base_url="https://debatemaster.preview.emergentagent.com"):
