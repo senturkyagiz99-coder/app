@@ -335,11 +335,11 @@ async def create_payment_session(request: Request, payment_request: PaymentReque
     if not stripe_api_key:
         raise HTTPException(status_code=500, detail="Stripe API key not configured")
     
-    # Get package details
+    # Package details with Turkish Lira
     package_key = f"{payment_request.payment_type}"
     if payment_request.payment_type == "donation" and payment_request.amount:
         amount = payment_request.amount
-        description = f"Donation - ${amount}"
+        description = f"Donation - ₺{amount}"
     elif package_key in PAYMENT_PACKAGES:
         amount = PAYMENT_PACKAGES[package_key]["amount"]
         description = PAYMENT_PACKAGES[package_key]["description"]
