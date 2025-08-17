@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./components/ui/dialog";
 import { Label } from "./components/ui/label";
 import { Separator } from "./components/ui/separator";
-import { Users, MessageSquare, Calendar, Trophy, Vote, Plus, Lock, LogOut, User, Camera, CreditCard, Upload, DollarSign, Image, Receipt, Download, Wifi, WifiOff } from "lucide-react";
+import { Users, MessageSquare, Calendar, Trophy, Vote, Plus, Lock, LogOut, User, Camera, CreditCard, Upload, DollarSign, Image, Receipt, Download, Wifi, WifiOff, Bell, BellOff } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -26,7 +26,8 @@ function App() {
   const [comments, setComments] = useState([]);
   const [activeTab, setActiveTab] = useState('debates');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [pushSubscription, setPushSubscription] = useState(null);
   
   // Forms state
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
@@ -54,7 +55,7 @@ function App() {
     debate_id: ''
   });
 
-  // PWA and offline functionality
+  // PWA ve çevrimdışı işlevsellik
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -66,6 +67,14 @@ function App() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
+  }, []);
+
+  // Bildirim izinlerini kontrol et
+  useEffect(() => {
+    if ('Notification' in window) {
+      const permission = Notification.permission;
+      setNotificationsEnabled(permission === 'granted');
+    }
   }, []);
 
   useEffect(() => {
@@ -81,7 +90,7 @@ function App() {
     }
   }, [token, isAdmin]);
 
-  // Check for payment success/cancel in URL
+  // Ödeme başarısı/iptali URL'sini kontrol et
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const sessionId = urlParams.get('session_id');
@@ -90,13 +99,111 @@ function App() {
     }
   }, []);
 
+  // Push bildirimleri için service worker'ı kaydet
+  useEffect(() => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      registerServiceWorker();
+    }
+  }, []);
+
+  const registerServiceWorker = async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      console.log('Service Worker kaydedildi:', registration);
+    } catch (error) {
+      console.error('Service Worker kayıt hatası:', error);
+    }
+  };
+
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      alert('Bu tarayıcı bildirimleri desteklemiyor');
+      return;
+    }
+
+    if (Notification.permission === 'granted') {
+      await subscribeToNotifications();
+      return;
+    }
+
+    if (Notification.permission !== 'denied') {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        setNotificationsEnabled(true);
+        await subscribeToNotifications();
+        alert('Bildirimler başarıyla etkinleştirildi!');
+      } else {
+        alert('Bildirimler reddedildi. Tarayıcı ayarlarından etkinleştirebilirsiniz.');
+      }
+    } else {
+      alert('Bildirimler engellenmiş. Tarayıcı ayarlarından etkinleştirin.');
+    }
+  };
+
+  const subscribeToNotifications = async () => {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array('BEl62iUYgUivxIkv69yViEuiBIa40HI0DLb5g7OBzpGbk4YD5BtMbYeJ8EeNz2K1-hGWJMF4B3P2B5AY2QKYzgc')
+      });
+
+      // Backend'e abonelik bilgisini gönder
+      await axios.post(`${API}/notifications/subscribe`, {
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: btoa(String.fromCharCode.apply(null, new Uint8Array(subscription.getKey('p256dh')))),
+          auth: btoa(String.fromCharCode.apply(null, new Uint8Array(subscription.getKey('auth'))))
+        }
+      });
+
+      setPushSubscription(subscription);
+      setNotificationsEnabled(true);
+    } catch (error) {
+      console.error('Bildirim aboneliği hatası:', error);
+    }
+  };
+
+  const unsubscribeFromNotifications = async () => {
+    try {
+      if (pushSubscription) {
+        await pushSubscription.unsubscribe();
+        await axios.delete(`${API}/notifications/unsubscribe/${encodeURIComponent(pushSubscription.endpoint)}`);
+        setPushSubscription(null);
+      }
+      setNotificationsEnabled(false);
+      alert('Bildirimler kapatıldı');
+    } catch (error) {
+      console.error('Bildirim aboneliği iptal hatası:', error);
+    }
+  };
+
+  // VAPID key converter
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
   const fetchDebates = async () => {
     try {
       const response = await axios.get(`${API}/debates`);
       setDebates(response.data);
+      // Çevrimdışı kullanım için önbelleğe al
+      localStorage.setItem('debates', JSON.stringify(response.data));
     } catch (error) {
-      console.error('Error fetching debates:', error);
-      // Load from local storage if offline
+      console.error('Tartışmalar yüklenirken hata:', error);
+      // Çevrimdışıysa yerel depolamadan yükle
       if (!isOnline) {
         const cachedDebates = localStorage.getItem('debates');
         if (cachedDebates) {
@@ -110,11 +217,11 @@ function App() {
     try {
       const response = await axios.get(`${API}/photos`);
       setPhotos(response.data);
-      // Cache photos for offline use
+      // Çevrimdışı kullanım için fotoğrafları önbelleğe al
       localStorage.setItem('photos', JSON.stringify(response.data));
     } catch (error) {
-      console.error('Error fetching photos:', error);
-      // Load from local storage if offline
+      console.error('Fotoğraflar yüklenirken hata:', error);
+      // Çevrimdışıysa yerel depolamadan yükle
       if (!isOnline) {
         const cachedPhotos = localStorage.getItem('photos');
         if (cachedPhotos) {
@@ -129,7 +236,7 @@ function App() {
       const response = await axios.get(`${API}/payments/packages`);
       setPaymentPackages(response.data);
     } catch (error) {
-      console.error('Error fetching payment packages:', error);
+      console.error('Ödeme paketleri yüklenirken hata:', error);
     }
   };
 
@@ -139,7 +246,7 @@ function App() {
       const response = await axios.get(`${API}/payments/transactions`);
       setPaymentTransactions(response.data);
     } catch (error) {
-      console.error('Error fetching payment transactions:', error);
+      console.error('Ödeme işlemleri yüklenirken hata:', error);
     }
   };
 
@@ -148,14 +255,14 @@ function App() {
       const response = await axios.get(`${API}/comments/${debateId}`);
       setComments(response.data);
     } catch (error) {
-      console.error('Error fetching comments:', error);
+      console.error('Yorumlar yüklenirken hata:', error);
     }
   };
 
   const pollPaymentStatus = async (sessionId, attempts = 0) => {
     const maxAttempts = 10;
     if (attempts >= maxAttempts) {
-      alert('Payment status check timed out. Please contact admin if payment was made.');
+      alert('Ödeme durumu kontrol zaman aşımına uğradı. Ödeme yaptıysanız lütfen yöneticiyle iletişime geçin.');
       return;
     }
 
@@ -164,20 +271,20 @@ function App() {
       const data = response.data;
       
       if (data.payment_status === 'paid') {
-        alert('Payment successful! Thank you for your contribution.');
+        alert('Ödeme başarılı! Katkınız için teşekkürler.');
         if (isAdmin) {
           fetchPaymentTransactions();
         }
         return;
       } else if (data.status === 'expired') {
-        alert('Payment session expired. Please try again.');
+        alert('Ödeme oturumu süresi doldu. Lütfen tekrar deneyin.');
         return;
       }
 
-      // Continue polling if still pending
+      // Hala beklemedeyse yoklamaya devam et
       setTimeout(() => pollPaymentStatus(sessionId, attempts + 1), 2000);
     } catch (error) {
-      console.error('Error checking payment status:', error);
+      console.error('Ödeme durumu kontrol hatası:', error);
     }
   };
 
@@ -192,7 +299,7 @@ function App() {
       axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
       setLoginForm({ username: '', password: '' });
     } catch (error) {
-      alert('Invalid credentials');
+      alert('Geçersiz kimlik bilgileri');
     }
   };
 
@@ -206,7 +313,7 @@ function App() {
   const handleCreateDebate = async (e) => {
     e.preventDefault();
     if (!isOnline) {
-      alert('You need to be online to create debates');
+      alert('Tartışma oluşturmak için çevrimiçi olmanız gerekir');
       return;
     }
     try {
@@ -220,19 +327,19 @@ function App() {
         status: 'upcoming'
       });
       fetchDebates();
-      alert('Debate created successfully!');
+      alert('Tartışma başarıyla oluşturuldu!');
     } catch (error) {
-      alert('Error creating debate');
+      alert('Tartışma oluşturulurken hata');
     }
   };
 
   const handleVote = async (debateId, voteType) => {
     if (!voteForm.voter_name.trim()) {
-      alert('Please enter your name to vote');
+      alert('Oy vermek için lütfen adınızı girin');
       return;
     }
     if (!isOnline) {
-      alert('You need to be online to vote');
+      alert('Oy vermek için çevrimiçi olmanız gerekir');
       return;
     }
     try {
@@ -243,19 +350,19 @@ function App() {
       });
       setVoteForm({ voter_name: '' });
       fetchDebates();
-      alert('Vote recorded successfully!');
+      alert('Oyunuz başarıyla kaydedildi!');
     } catch (error) {
-      alert(error.response?.data?.detail || 'Error voting');
+      alert(error.response?.data?.detail || 'Oy verirken hata');
     }
   };
 
   const handleJoinDebate = async (debateId) => {
     if (!joinForm.participant_name.trim()) {
-      alert('Please enter your name to join');
+      alert('Katılmak için lütfen adınızı girin');
       return;
     }
     if (!isOnline) {
-      alert('You need to be online to join debates');
+      alert('Tartışmaya katılmak için çevrimiçi olmanız gerekir');
       return;
     }
     try {
@@ -265,20 +372,20 @@ function App() {
       });
       setJoinForm({ participant_name: '' });
       fetchDebates();
-      alert('Successfully joined the debate!');
+      alert('Tartışmaya başarıyla katıldınız!');
     } catch (error) {
-      alert(error.response?.data?.detail || 'Error joining debate');
+      alert(error.response?.data?.detail || 'Tartışmaya katılırken hata');
     }
   };
 
   const handleComment = async (e) => {
     e.preventDefault();
     if (!commentForm.author_name.trim() || !commentForm.content.trim()) {
-      alert('Please fill in all comment fields');
+      alert('Lütfen tüm yorum alanlarını doldurun');
       return;
     }
     if (!isOnline) {
-      alert('You need to be online to post comments');
+      alert('Yorum yapmak için çevrimiçi olmanız gerekir');
       return;
     }
     try {
@@ -290,18 +397,18 @@ function App() {
       setCommentForm({ content: '', author_name: '' });
       fetchComments(selectedDebate.id);
     } catch (error) {
-      alert('Error posting comment');
+      alert('Yorum gönderirken hata');
     }
   };
 
   const handlePhotoUpload = async (e) => {
     e.preventDefault();
     if (!photoForm.file || !photoForm.title.trim()) {
-      alert('Please select a file and enter a title');
+      alert('Lütfen bir dosya seçin ve başlık girin');
       return;
     }
     if (!isOnline) {
-      alert('You need to be online to upload photos');
+      alert('Fotoğraf yüklemek için çevrimiçi olmanız gerekir');
       return;
     }
 
@@ -323,35 +430,35 @@ function App() {
         event_date: '',
         file: null
       });
-      // Reset file input
+      // Dosya input'unu sıfırla
       document.getElementById('photo-upload').value = '';
       fetchPhotos();
-      alert('Photo uploaded successfully!');
+      alert('Fotoğraf başarıyla yüklendi!');
     } catch (error) {
-      alert('Error uploading photo');
+      alert('Fotoğraf yüklenirken hata');
     }
   };
 
   const handleDeletePhoto = async (photoId) => {
-    if (!confirm('Are you sure you want to delete this photo?')) return;
+    if (!confirm('Bu fotoğrafı silmek istediğinizden emin misiniz?')) return;
     if (!isOnline) {
-      alert('You need to be online to delete photos');
+      alert('Fotoğraf silmek için çevrimiçi olmanız gerekir');
       return;
     }
     
     try {
       await axios.delete(`${API}/photos/${photoId}`);
       fetchPhotos();
-      alert('Photo deleted successfully!');
+      alert('Fotoğraf başarıyla silindi!');
     } catch (error) {
-      alert('Error deleting photo');
+      alert('Fotoğraf silinirken hata');
     }
   };
 
   const handlePayment = async (e) => {
     e.preventDefault();
     if (!isOnline) {
-      alert('You need to be online to process payments');
+      alert('Ödeme işlemi için çevrimiçi olmanız gerekir');
       return;
     }
     
@@ -359,18 +466,18 @@ function App() {
       const response = await axios.post(`${API}/payments/checkout/session`, paymentForm);
       
       if (response.data.url) {
-        // Redirect to Stripe checkout
+        // Stripe checkout'a yönlendir
         window.location.href = response.data.url;
       } else {
-        alert('Error creating payment session');
+        alert('Ödeme oturumu oluşturulurken hata');
       }
     } catch (error) {
-      alert(error.response?.data?.detail || 'Error processing payment');
+      alert(error.response?.data?.detail || 'Ödeme işlemi hatası');
     }
   };
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleString();
+    return new Date(dateString).toLocaleString('tr-TR');
   };
 
   const getStatusColor = (status) => {
@@ -382,12 +489,30 @@ function App() {
     }
   };
 
+  const getStatusText = (status) => {
+    switch (status) {
+      case 'upcoming': return 'Yaklaşan';
+      case 'active': return 'Aktif';
+      case 'completed': return 'Tamamlandı';
+      default: return 'Bilinmiyor';
+    }
+  };
+
   const getPaymentStatusColor = (status) => {
     switch (status) {
       case 'paid': return 'bg-green-500';
       case 'pending': return 'bg-yellow-500';
       case 'failed': return 'bg-red-500';
       default: return 'bg-gray-500';
+    }
+  };
+
+  const getPaymentStatusText = (status) => {
+    switch (status) {
+      case 'paid': return 'Ödendi';
+      case 'pending': return 'Beklemede';
+      case 'failed': return 'Başarısız';
+      default: return 'Bilinmiyor';
     }
   };
 
@@ -401,29 +526,51 @@ function App() {
               <div className="bg-red-600 p-2 rounded-full">
                 <Trophy className="h-6 w-6 text-white" />
               </div>
-              <h1 className="text-2xl font-bold text-red-700">Debate Club</h1>
+              <h1 className="text-2xl font-bold text-red-700">Tartışma Kulübü</h1>
             </div>
             <div className="flex items-center space-x-4">
-              {/* Offline/Online Status */}
+              {/* Çevrimdışı/Çevrimiçi Durumu */}
               <div className="flex items-center space-x-2">
                 {isOnline ? (
                   <div className="flex items-center text-green-600">
                     <Wifi className="h-4 w-4 mr-1" />
-                    <span className="text-xs">Online</span>
+                    <span className="text-xs">Çevrimiçi</span>
                   </div>
                 ) : (
                   <div className="flex items-center text-red-600">
                     <WifiOff className="h-4 w-4 mr-1" />
-                    <span className="text-xs">Offline</span>
+                    <span className="text-xs">Çevrimdışı</span>
                   </div>
                 )}
+              </div>
+
+              {/* Bildirim Durumu */}
+              <div className="flex items-center space-x-2">
+                <Button
+                  onClick={notificationsEnabled ? unsubscribeFromNotifications : requestNotificationPermission}
+                  variant="outline"
+                  size="sm"
+                  className={`${notificationsEnabled ? 'border-green-300 text-green-700 hover:bg-green-50' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                >
+                  {notificationsEnabled ? (
+                    <>
+                      <Bell className="h-4 w-4 mr-1" />
+                      <span className="text-xs">Bildirimler Açık</span>
+                    </>
+                  ) : (
+                    <>
+                      <BellOff className="h-4 w-4 mr-1" />
+                      <span className="text-xs">Bildirimleri Aç</span>
+                    </>
+                  )}
+                </Button>
               </div>
               
               {isAdmin ? (
                 <div className="flex items-center space-x-3">
                   <Badge variant="secondary" className="bg-red-100 text-red-700">
                     <User className="h-3 w-3 mr-1" />
-                    Admin
+                    Yönetici
                   </Badge>
                   <Button 
                     onClick={handleLogout}
@@ -432,7 +579,7 @@ function App() {
                     className="border-red-300 text-red-700 hover:bg-red-50"
                   >
                     <LogOut className="h-4 w-4 mr-1" />
-                    Logout
+                    Çıkış
                   </Button>
                 </div>
               ) : (
@@ -440,19 +587,19 @@ function App() {
                   <DialogTrigger asChild>
                     <Button className="bg-red-600 hover:bg-red-700">
                       <Lock className="h-4 w-4 mr-2" />
-                      Admin Login
+                      Yönetici Girişi
                     </Button>
                   </DialogTrigger>
                   <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                      <DialogTitle className="text-red-700">Admin Login</DialogTitle>
+                      <DialogTitle className="text-red-700">Yönetici Girişi</DialogTitle>
                       <DialogDescription>
-                        Enter your credentials to access admin features
+                        Yönetici özelliklerine erişmek için kimlik bilgilerinizi girin
                       </DialogDescription>
                     </DialogHeader>
                     <form onSubmit={handleLogin} className="space-y-4">
                       <div>
-                        <Label htmlFor="username">Username</Label>
+                        <Label htmlFor="username">Kullanıcı Adı</Label>
                         <Input
                           id="username"
                           value={loginForm.username}
@@ -462,7 +609,7 @@ function App() {
                         />
                       </div>
                       <div>
-                        <Label htmlFor="password">Password</Label>
+                        <Label htmlFor="password">Şifre</Label>
                         <Input
                           id="password"
                           type="password"
@@ -473,7 +620,7 @@ function App() {
                         />
                       </div>
                       <Button type="submit" className="w-full bg-red-600 hover:bg-red-700">
-                        Login
+                        Giriş Yap
                       </Button>
                     </form>
                   </DialogContent>
@@ -489,35 +636,35 @@ function App() {
           <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 bg-white border border-red-200">
             <TabsTrigger value="debates" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
               <Trophy className="h-4 w-4 mr-2" />
-              Debates
+              Tartışmalar
             </TabsTrigger>
             <TabsTrigger value="schedule" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
               <Calendar className="h-4 w-4 mr-2" />
-              Schedule
+              Program
             </TabsTrigger>
             <TabsTrigger value="photos" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
               <Camera className="h-4 w-4 mr-2" />
-              Photos
+              Fotoğraflar
             </TabsTrigger>
             <TabsTrigger value="payments" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
               <CreditCard className="h-4 w-4 mr-2" />
-              Payments
+              Ödemeler
             </TabsTrigger>
             {isAdmin && (
               <>
                 <TabsTrigger value="admin" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
                   <Plus className="h-4 w-4 mr-2" />
-                  Create
+                  Oluştur
                 </TabsTrigger>
                 <TabsTrigger value="admin-photos" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
                   <Upload className="h-4 w-4 mr-2" />
-                  Upload
+                  Yükle
                 </TabsTrigger>
               </>
             )}
           </TabsList>
 
-          {/* Debates Tab */}
+          {/* Tartışmalar Sekmesi */}
           <TabsContent value="debates" className="space-y-6">
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {debates.map((debate) => (
@@ -525,7 +672,7 @@ function App() {
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <Badge className={`${getStatusColor(debate.status)} text-white`}>
-                        {debate.status}
+                        {getStatusText(debate.status)}
                       </Badge>
                       <div className="flex items-center space-x-2 text-sm text-gray-500">
                         <Users className="h-4 w-4" />
@@ -537,30 +684,30 @@ function App() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="text-sm text-gray-600">
-                      <strong>Topic:</strong> {debate.topic}
+                      <strong>Konu:</strong> {debate.topic}
                     </div>
                     <div className="text-sm text-gray-600">
-                      <strong>Time:</strong> {formatDate(debate.start_time)}
+                      <strong>Tarih:</strong> {formatDate(debate.start_time)}
                     </div>
                     
-                    {/* Voting Section */}
+                    {/* Oylama Bölümü */}
                     <div className="space-y-3">
                       <div className="flex justify-between items-center">
                         <div className="flex items-center space-x-4">
                           <div className="text-center">
                             <div className="text-lg font-bold text-green-600">{debate.votes_for}</div>
-                            <div className="text-xs text-gray-500">For</div>
+                            <div className="text-xs text-gray-500">Lehinde</div>
                           </div>
                           <div className="text-center">
                             <div className="text-lg font-bold text-red-600">{debate.votes_against}</div>
-                            <div className="text-xs text-gray-500">Against</div>
+                            <div className="text-xs text-gray-500">Aleyhinde</div>
                           </div>
                         </div>
                       </div>
                       
                       <div className="space-y-2">
                         <Input
-                          placeholder="Your name to vote"
+                          placeholder="Oy vermek için adınız"
                           value={voteForm.voter_name}
                           onChange={(e) => setVoteForm({voter_name: e.target.value})}
                           className="text-sm"
@@ -572,7 +719,7 @@ function App() {
                             className="flex-1 bg-green-600 hover:bg-green-700"
                           >
                             <Vote className="h-3 w-3 mr-1" />
-                            Vote For
+                            Lehinde Oy Ver
                           </Button>
                           <Button 
                             size="sm" 
@@ -580,7 +727,7 @@ function App() {
                             className="flex-1 bg-red-600 hover:bg-red-700"
                           >
                             <Vote className="h-3 w-3 mr-1" />
-                            Vote Against
+                            Aleyhinde Oy Ver
                           </Button>
                         </div>
                       </div>
@@ -588,10 +735,10 @@ function App() {
 
                     <Separator />
 
-                    {/* Join Debate */}
+                    {/* Tartışmaya Katıl */}
                     <div className="space-y-2">
                       <Input
-                        placeholder="Your name to join discussion"
+                        placeholder="Tartışmaya katılmak için adınız"
                         value={joinForm.participant_name}
                         onChange={(e) => setJoinForm({participant_name: e.target.value})}
                         className="text-sm"
@@ -603,11 +750,11 @@ function App() {
                         className="w-full border-red-300 text-red-700 hover:bg-red-50"
                       >
                         <Users className="h-3 w-3 mr-1" />
-                        Join Discussion
+                        Tartışmaya Katıl
                       </Button>
                     </div>
 
-                    {/* Comments */}
+                    {/* Yorumlar */}
                     <Dialog>
                       <DialogTrigger asChild>
                         <Button 
@@ -620,29 +767,29 @@ function App() {
                           }}
                         >
                           <MessageSquare className="h-3 w-3 mr-1" />
-                          View Comments
+                          Yorumları Görüntüle
                         </Button>
                       </DialogTrigger>
                       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                         <DialogHeader>
-                          <DialogTitle className="text-red-700">Discussion: {debate.title}</DialogTitle>
+                          <DialogTitle className="text-red-700">Tartışma: {debate.title}</DialogTitle>
                         </DialogHeader>
                         <div className="space-y-4">
                           <form onSubmit={handleComment} className="space-y-3">
                             <Input
-                              placeholder="Your name"
+                              placeholder="Adınız"
                               value={commentForm.author_name}
                               onChange={(e) => setCommentForm({...commentForm, author_name: e.target.value})}
                               required
                             />
                             <Textarea
-                              placeholder="Share your thoughts on this debate..."
+                              placeholder="Bu tartışma hakkındaki düşüncelerinizi paylaşın..."
                               value={commentForm.content}
                               onChange={(e) => setCommentForm({...commentForm, content: e.target.value})}
                               required
                             />
                             <Button type="submit" className="bg-red-600 hover:bg-red-700">
-                              Post Comment
+                              Yorum Gönder
                             </Button>
                           </form>
                           <Separator />
@@ -666,13 +813,13 @@ function App() {
             </div>
           </TabsContent>
 
-          {/* Schedule Tab */}
+          {/* Program Sekmesi */}
           <TabsContent value="schedule">
             <Card className="border-red-200">
               <CardHeader>
                 <CardTitle className="text-red-700 flex items-center">
                   <Calendar className="h-5 w-5 mr-2" />
-                  Debate Schedule
+                  Tartışma Programı
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -688,7 +835,7 @@ function App() {
                         <p className="text-xs text-gray-500">{formatDate(debate.start_time)}</p>
                       </div>
                       <Badge className={`${getStatusColor(debate.status)} text-white`}>
-                        {debate.status}
+                        {getStatusText(debate.status)}
                       </Badge>
                     </div>
                   ))}
@@ -697,16 +844,16 @@ function App() {
             </Card>
           </TabsContent>
 
-          {/* Photos Tab */}
+          {/* Fotoğraflar Sekmesi */}
           <TabsContent value="photos">
             <Card className="border-red-200">
               <CardHeader>
                 <CardTitle className="text-red-700 flex items-center">
                   <Camera className="h-5 w-5 mr-2" />
-                  Event Photos
+                  Etkinlik Fotoğrafları
                 </CardTitle>
                 <CardDescription>
-                  Photos from past debates and club activities
+                  Geçmiş tartışmalar ve kulüp etkinliklerinden fotoğraflar
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -728,7 +875,7 @@ function App() {
                               onClick={() => handleDeletePhoto(photo.id)}
                               className="border-red-300 text-red-700 hover:bg-red-50"
                             >
-                              Delete
+                              Sil
                             </Button>
                           )}
                         </div>
@@ -740,23 +887,23 @@ function App() {
             </Card>
           </TabsContent>
 
-          {/* Payments Tab */}
+          {/* Ödemeler Sekmesi */}
           <TabsContent value="payments">
             <div className="space-y-6">
               <Card className="border-red-200">
                 <CardHeader>
                   <CardTitle className="text-red-700 flex items-center">
                     <CreditCard className="h-5 w-5 mr-2" />
-                    Club Payments
+                    Kulüp Ödemeleri
                   </CardTitle>
                   <CardDescription>
-                    Support the debate club through memberships and donations (Turkish Lira)
+                    Üyelikler ve bağışlar yoluyla tartışma kulübünü destekleyin (Türk Lirası)
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handlePayment} className="space-y-4">
                     <div>
-                      <Label htmlFor="payment_type">Payment Type</Label>
+                      <Label htmlFor="payment_type">Ödeme Türü</Label>
                       <select 
                         id="payment_type"
                         value={paymentForm.payment_type}
@@ -768,13 +915,13 @@ function App() {
                             {pkg.description} - ₺{pkg.amount}
                           </option>
                         ))}
-                        <option value="donation">Custom Donation</option>
+                        <option value="donation">Özel Bağış</option>
                       </select>
                     </div>
                     
                     {paymentForm.payment_type === 'donation' && (
                       <div>
-                        <Label htmlFor="amount">Donation Amount (₺)</Label>
+                        <Label htmlFor="amount">Bağış Miktarı (₺)</Label>
                         <Input
                           id="amount"
                           type="number"
@@ -782,38 +929,38 @@ function App() {
                           min="1"
                           value={paymentForm.amount}
                           onChange={(e) => setPaymentForm({...paymentForm, amount: parseFloat(e.target.value)})}
-                          placeholder="Enter amount in Turkish Lira"
+                          placeholder="Türk Lirası cinsinden miktar girin"
                           required
                         />
                       </div>
                     )}
                     
                     <div>
-                      <Label htmlFor="member_name">Your Name</Label>
+                      <Label htmlFor="member_name">Adınız</Label>
                       <Input
                         id="member_name"
                         value={paymentForm.member_name}
                         onChange={(e) => setPaymentForm({...paymentForm, member_name: e.target.value})}
-                        placeholder="Enter your name"
+                        placeholder="Adınızı girin"
                         required
                       />
                     </div>
                     
                     <Button type="submit" className="w-full bg-red-600 hover:bg-red-700">
                       <DollarSign className="h-4 w-4 mr-2" />
-                      Proceed to Payment
+                      Ödemeye İlerle
                     </Button>
                   </form>
                 </CardContent>
               </Card>
 
-              {/* Payment Transactions (Admin Only) */}
+              {/* Ödeme İşlemleri (Sadece Yönetici) */}
               {isAdmin && (
                 <Card className="border-red-200">
                   <CardHeader>
                     <CardTitle className="text-red-700 flex items-center">
                       <Receipt className="h-5 w-5 mr-2" />
-                      Payment Transactions
+                      Ödeme İşlemleri
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -829,7 +976,7 @@ function App() {
                             </div>
                           </div>
                           <Badge className={`${getPaymentStatusColor(transaction.payment_status)} text-white`}>
-                            {transaction.payment_status}
+                            {getPaymentStatusText(transaction.payment_status)}
                           </Badge>
                         </div>
                       ))}
@@ -840,56 +987,56 @@ function App() {
             </div>
           </TabsContent>
 
-          {/* Admin Create Debate Tab */}
+          {/* Yönetici Tartışma Oluştur Sekmesi */}
           {isAdmin && (
             <TabsContent value="admin">
               <Card className="border-red-200">
                 <CardHeader>
                   <CardTitle className="text-red-700 flex items-center">
                     <Plus className="h-5 w-5 mr-2" />
-                    Create New Debate
+                    Yeni Tartışma Oluştur
                   </CardTitle>
                   <CardDescription>
-                    Schedule and manage debate topics for the club
+                    Kulüp için tartışma konularını planlayın ve yönetin
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleCreateDebate} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor="title">Debate Title</Label>
+                        <Label htmlFor="title">Tartışma Başlığı</Label>
                         <Input
                           id="title"
                           value={debateForm.title}
                           onChange={(e) => setDebateForm({...debateForm, title: e.target.value})}
-                          placeholder="Enter debate title"
+                          placeholder="Tartışma başlığını girin"
                           required
                         />
                       </div>
                       <div>
-                        <Label htmlFor="topic">Topic</Label>
+                        <Label htmlFor="topic">Konu</Label>
                         <Input
                           id="topic"
                           value={debateForm.topic}
                           onChange={(e) => setDebateForm({...debateForm, topic: e.target.value})}
-                          placeholder="Main debate topic"
+                          placeholder="Ana tartışma konusu"
                           required
                         />
                       </div>
                     </div>
                     <div>
-                      <Label htmlFor="description">Description</Label>
+                      <Label htmlFor="description">Açıklama</Label>
                       <Textarea
                         id="description"
                         value={debateForm.description}
                         onChange={(e) => setDebateForm({...debateForm, description: e.target.value})}
-                        placeholder="Detailed description of the debate"
+                        placeholder="Tartışmanın detaylı açıklaması"
                         required
                       />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor="start_time">Start Time</Label>
+                        <Label htmlFor="start_time">Başlangıç Saati</Label>
                         <Input
                           id="start_time"
                           type="datetime-local"
@@ -899,7 +1046,7 @@ function App() {
                         />
                       </div>
                       <div>
-                        <Label htmlFor="end_time">End Time</Label>
+                        <Label htmlFor="end_time">Bitiş Saati</Label>
                         <Input
                           id="end_time"
                           type="datetime-local"
@@ -911,7 +1058,7 @@ function App() {
                     </div>
                     <Button type="submit" className="bg-red-600 hover:bg-red-700">
                       <Plus className="h-4 w-4 mr-2" />
-                      Create Debate
+                      Tartışma Oluştur
                     </Button>
                   </form>
                 </CardContent>
@@ -919,23 +1066,23 @@ function App() {
             </TabsContent>
           )}
 
-          {/* Admin Photo Upload Tab */}
+          {/* Yönetici Fotoğraf Yükle Sekmesi */}
           {isAdmin && (
             <TabsContent value="admin-photos">
               <Card className="border-red-200">
                 <CardHeader>
                   <CardTitle className="text-red-700 flex items-center">
                     <Upload className="h-5 w-5 mr-2" />
-                    Upload Event Photos
+                    Etkinlik Fotoğrafları Yükle
                   </CardTitle>
                   <CardDescription>
-                    Add photos from debates and club activities
+                    Tartışmalar ve kulüp etkinliklerinden fotoğraf ekleyin
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handlePhotoUpload} className="space-y-4">
                     <div>
-                      <Label htmlFor="photo-upload">Photo File</Label>
+                      <Label htmlFor="photo-upload">Fotoğraf Dosyası</Label>
                       <Input
                         id="photo-upload"
                         type="file"
@@ -946,17 +1093,17 @@ function App() {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor="photo-title">Photo Title</Label>
+                        <Label htmlFor="photo-title">Fotoğraf Başlığı</Label>
                         <Input
                           id="photo-title"
                           value={photoForm.title}
                           onChange={(e) => setPhotoForm({...photoForm, title: e.target.value})}
-                          placeholder="Enter photo title"
+                          placeholder="Fotoğraf başlığını girin"
                           required
                         />
                       </div>
                       <div>
-                        <Label htmlFor="event-date">Event Date</Label>
+                        <Label htmlFor="event-date">Etkinlik Tarihi</Label>
                         <Input
                           id="event-date"
                           type="date"
@@ -967,17 +1114,17 @@ function App() {
                       </div>
                     </div>
                     <div>
-                      <Label htmlFor="photo-description">Description</Label>
+                      <Label htmlFor="photo-description">Açıklama</Label>
                       <Textarea
                         id="photo-description"
                         value={photoForm.description}
                         onChange={(e) => setPhotoForm({...photoForm, description: e.target.value})}
-                        placeholder="Describe the event or photo context"
+                        placeholder="Etkinlik veya fotoğraf bağlamını açıklayın"
                       />
                     </div>
                     <Button type="submit" className="bg-red-600 hover:bg-red-700">
                       <Upload className="h-4 w-4 mr-2" />
-                      Upload Photo
+                      Fotoğraf Yükle
                     </Button>
                   </form>
                 </CardContent>
@@ -992,10 +1139,10 @@ function App() {
         <div className="container mx-auto px-6 text-center">
           <div className="flex items-center justify-center space-x-2 mb-4">
             <Trophy className="h-6 w-6" />
-            <span className="text-xl font-bold">Debate Club</span>
+            <span className="text-xl font-bold">Tartışma Kulübü</span>
           </div>
           <p className="text-red-200">
-            Fostering critical thinking and eloquent discourse since 2025
+            2025'ten beri eleştirel düşünme ve etkili söylemi teşvik ediyoruz
           </p>
         </div>
       </footer>
