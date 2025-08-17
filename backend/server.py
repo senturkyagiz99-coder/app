@@ -97,6 +97,16 @@ class ParticipantJoin(BaseModel):
     debate_id: str
     participant_name: str
 
+class PushSubscription(BaseModel):
+    endpoint: str
+    keys: Dict[str, str]
+
+class NotificationPayload(BaseModel):
+    title: str
+    body: str
+    icon: Optional[str] = "/icon-192x192.png"
+    url: Optional[str] = "/"
+
 class Photo(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     filename: str
