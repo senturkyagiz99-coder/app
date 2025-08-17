@@ -1030,7 +1030,7 @@ function App() {
                         id="description"
                         value={debateForm.description}
                         onChange={(e) => setDebateForm({...debateForm, description: e.target.value})}
-                        placeholder="Tartışmanın detaylı açıklaması"
+                        placeholder="Münazaranın detaylı açıklaması"
                         required
                       />
                     </div>
