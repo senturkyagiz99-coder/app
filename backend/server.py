@@ -561,7 +561,7 @@ async def get_payment_transactions(current_admin: str = Depends(get_current_admi
 
 @api_router.get("/")
 async def root():
-    return {"message": "Tartışma Kulübü API'si"}
+    return {"message": "Münazara Kulübü API'si"}
 
 # Include the router in the main app
 app.include_router(api_router)
