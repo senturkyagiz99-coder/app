@@ -682,6 +682,7 @@ def main():
     tests = [
         tester.test_root_endpoint,
         tester.test_admin_login_invalid,
+        tester.test_old_admin_login,
         tester.test_admin_login,
         tester.test_unauthorized_create_debate,
         tester.test_create_debate,
