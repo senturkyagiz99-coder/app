@@ -735,10 +735,10 @@ function App() {
 
                     <Separator />
 
-                    {/* Tartışmaya Katıl */}
+                    {/* Münazaraya Katıl */}
                     <div className="space-y-2">
                       <Input
-                        placeholder="Tartışmaya katılmak için adınız"
+                        placeholder="Münazaraya katılmak için adınız"
                         value={joinForm.participant_name}
                         onChange={(e) => setJoinForm({participant_name: e.target.value})}
                         className="text-sm"
@@ -750,7 +750,7 @@ function App() {
                         className="w-full border-red-300 text-red-700 hover:bg-red-50"
                       >
                         <Users className="h-3 w-3 mr-1" />
-                        Tartışmaya Katıl
+                        Münazaraya Katıl
                       </Button>
                     </div>
 
