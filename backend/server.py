@@ -196,7 +196,7 @@ async def send_push_notification(payload: NotificationPayload):
 # Routes
 @api_router.post("/admin/login", response_model=Token)
 async def admin_login(admin_data: AdminLogin):
-    if admin_data.username == "admin" and admin_data.password == "debateclub123":
+    if admin_data.username == "debateclub2025" and admin_data.password == "onlinedebate":
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
             data={"sub": admin_data.username}, expires_delta=access_token_expires
