@@ -493,6 +493,15 @@ def main():
         tester.test_join_debate,
         tester.test_create_comment,
         tester.test_get_comments,
+        # New photo and payment tests
+        tester.test_get_payment_packages,
+        tester.test_get_photos,
+        tester.test_photo_upload_unauthorized,
+        tester.test_photo_upload_authorized,
+        tester.test_payment_session_unauthorized,
+        tester.test_payment_session_authorized,
+        tester.test_payment_transactions_unauthorized,
+        tester.test_payment_transactions_authorized,
     ]
     
     # Run all tests
