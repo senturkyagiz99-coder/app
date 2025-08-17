@@ -404,6 +404,21 @@ function App() {
               <h1 className="text-2xl font-bold text-red-700">Debate Club</h1>
             </div>
             <div className="flex items-center space-x-4">
+              {/* Offline/Online Status */}
+              <div className="flex items-center space-x-2">
+                {isOnline ? (
+                  <div className="flex items-center text-green-600">
+                    <Wifi className="h-4 w-4 mr-1" />
+                    <span className="text-xs">Online</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center text-red-600">
+                    <WifiOff className="h-4 w-4 mr-1" />
+                    <span className="text-xs">Offline</span>
+                  </div>
+                )}
+              </div>
+              
               {isAdmin ? (
                 <div className="flex items-center space-x-3">
                   <Badge variant="secondary" className="bg-red-100 text-red-700">
