@@ -63,8 +63,17 @@ class DebateClubAPITester:
             return False, {}
 
     def test_root_endpoint(self):
-        """Test root API endpoint"""
-        return self.run_test("Root API Endpoint", "GET", "", 200)
+        """Test root API endpoint - should return 'Münazara Kulübü API'si'"""
+        success, response = self.run_test("Root API Endpoint", "GET", "", 200)
+        if success and 'message' in response:
+            expected_message = "Münazara Kulübü API'si"
+            if response['message'] == expected_message:
+                print(f"   ✅ Correct API name: {response['message']}")
+                return True
+            else:
+                print(f"   ❌ Wrong API name: {response['message']} (expected: {expected_message})")
+                return False
+        return success
 
     def test_admin_login(self):
         """Test admin login with NEW credentials"""
