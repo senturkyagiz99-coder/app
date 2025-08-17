@@ -313,7 +313,7 @@ function App() {
   const handleCreateDebate = async (e) => {
     e.preventDefault();
     if (!isOnline) {
-      alert('Tartışma oluşturmak için çevrimiçi olmanız gerekir');
+      alert('Münazara oluşturmak için çevrimiçi olmanız gerekir');
       return;
     }
     try {
@@ -327,9 +327,9 @@ function App() {
         status: 'upcoming'
       });
       fetchDebates();
-      alert('Tartışma başarıyla oluşturuldu!');
+      alert('Münazara başarıyla oluşturuldu!');
     } catch (error) {
-      alert('Tartışma oluşturulurken hata');
+      alert('Münazara oluşturulurken hata');
     }
   };
 
