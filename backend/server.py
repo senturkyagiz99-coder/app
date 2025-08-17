@@ -209,6 +209,14 @@ async def admin_login(admin_data: AdminLogin):
 async def create_debate(debate: DebateCreate, current_admin: str = Depends(get_current_admin)):
     debate_obj = Debate(**debate.dict())
     await db.debates.insert_one(debate_obj.dict())
+    
+    # Yeni tartışma bildirimi gönder
+    await send_push_notification(NotificationPayload(
+        title="Yeni Tartışma!",
+        body=f"'{debate.title}' başlıklı yeni tartışma eklendi",
+        url="/"
+    ))
+    
     return debate_obj
 
 @api_router.get("/debates", response_model=List[Debate])
