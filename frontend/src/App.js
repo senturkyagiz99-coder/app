@@ -772,7 +772,7 @@ function App() {
                       </DialogTrigger>
                       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                         <DialogHeader>
-                          <DialogTitle className="text-red-700">Tartışma: {debate.title}</DialogTitle>
+                          <DialogTitle className="text-red-700">Münazara: {debate.title}</DialogTitle>
                         </DialogHeader>
                         <div className="space-y-4">
                           <form onSubmit={handleComment} className="space-y-3">
@@ -783,7 +783,7 @@ function App() {
                               required
                             />
                             <Textarea
-                              placeholder="Bu tartışma hakkındaki düşüncelerinizi paylaşın..."
+                              placeholder="Bu münazara hakkındaki düşüncelerinizi paylaşın..."
                               value={commentForm.content}
                               onChange={(e) => setCommentForm({...commentForm, content: e.target.value})}
                               required
