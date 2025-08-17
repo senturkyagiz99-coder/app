@@ -1139,7 +1139,7 @@ function App() {
         <div className="container mx-auto px-6 text-center">
           <div className="flex items-center justify-center space-x-2 mb-4">
             <Trophy className="h-6 w-6" />
-            <span className="text-xl font-bold">Tartışma Kulübü</span>
+            <span className="text-xl font-bold">Münazara Kulübü</span>
           </div>
           <p className="text-red-200">
             2025'ten beri eleştirel düşünme ve etkili söylemi teşvik ediyoruz
