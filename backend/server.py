@@ -380,7 +380,7 @@ async def create_payment_session(request: Request, payment_request: PaymentReque
             session_id=session.session_id,
             payment_type=payment_request.payment_type,
             amount=amount,
-            currency="usd",
+            currency="try",
             payment_status="pending",
             metadata=metadata
         )
