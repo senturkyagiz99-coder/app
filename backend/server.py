@@ -247,8 +247,52 @@ async def update_debate(debate_id: str, debate_update: DebateCreate, current_adm
 async def delete_debate(debate_id: str, current_admin: str = Depends(get_current_admin)):
     result = await db.debates.delete_one({"id": debate_id})
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Debate not found")
-    return {"message": "Debate deleted successfully"}
+        raise HTTPException(status_code=404, detail="Tartışma bulunamadı")
+    return {"message": "Tartışma başarıyla silindi"}
+
+# Push notification endpoints
+@api_router.post("/notifications/subscribe")
+async def subscribe_to_notifications(subscription: PushSubscription):
+    """Push notification aboneliği oluştur"""
+    try:
+        # Mevcut aboneliği kontrol et
+        existing = await db.push_subscriptions.find_one({"endpoint": subscription.endpoint})
+        if existing:
+            return {"message": "Zaten abone olunmuş"}
+        
+        # Yeni abonelik oluştur
+        subscription_data = {
+            "id": str(uuid.uuid4()),
+            "endpoint": subscription.endpoint,
+            "keys": subscription.keys,
+            "created_at": datetime.utcnow()
+        }
+        
+        await db.push_subscriptions.insert_one(subscription_data)
+        return {"message": "Bildirim aboneliği başarıyla oluşturuldu"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Abonelik hatası: {str(e)}")
+
+@api_router.delete("/notifications/unsubscribe/{endpoint}")
+async def unsubscribe_from_notifications(endpoint: str):
+    """Push notification aboneliğini iptal et"""
+    try:
+        result = await db.push_subscriptions.delete_one({"endpoint": endpoint})
+        if result.deleted_count == 0:
+            return {"message": "Abonelik bulunamadı"}
+        return {"message": "Bildirim aboneliği iptal edildi"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Abonelik iptal hatası: {str(e)}")
+
+@api_router.post("/notifications/send")
+async def send_notification(payload: NotificationPayload, current_admin: str = Depends(get_current_admin)):
+    """Manuel bildirim gönder (admin only)"""
+    success = await send_push_notification(payload)
+    if success:
+        return {"message": "Bildirim gönderildi"}
+    else:
+        raise HTTPException(status_code=500, detail="Bildirim gönderilemedi")
 
 @api_router.post("/debates/vote")
 async def vote_on_debate(vote: VoteRequest):
