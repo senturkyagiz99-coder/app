@@ -1,5 +1,5 @@
-// Service Worker for Debate Club PWA
-const CACHE_NAME = 'debate-club-v1';
+// Tartışma Kulübü PWA için Service Worker
+const CACHE_NAME = 'tartisma-kulubu-v1';
 const urlsToCache = [
   '/',
   '/static/js/bundle.js',
@@ -9,30 +9,30 @@ const urlsToCache = [
   '/icon-512x512.png'
 ];
 
-// Install event - cache resources
+// Install olayı - kaynakları önbelleğe al
 self.addEventListener('install', (event) => {
-  console.log('Service Worker: Install event');
+  console.log('Service Worker: Yükleme olayı');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('Service Worker: Caching files');
+        console.log('Service Worker: Dosyalar önbelleğe alınıyor');
         return cache.addAll(urlsToCache.map(url => new Request(url, { cache: 'reload' })));
       })
       .catch((error) => {
-        console.log('Service Worker: Cache failed', error);
+        console.log('Service Worker: Önbellek başarısız', error);
       })
   );
 });
 
-// Activate event - clean up old caches
+// Activate olayı - eski önbellekleri temizle
 self.addEventListener('activate', (event) => {
-  console.log('Service Worker: Activate event');
+  console.log('Service Worker: Aktivasyon olayı');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_NAME) {
-            console.log('Service Worker: Deleting old cache', cacheName);
+            console.log('Service Worker: Eski önbellek siliniyor', cacheName);
             return caches.delete(cacheName);
           }
         })
@@ -41,14 +41,14 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch olayı - önbellekten sun, ağa geri dön
 self.addEventListener('fetch', (event) => {
-  // Skip cross-origin requests
+  // Çapraz köken isteklerini atla
   if (!event.request.url.startsWith(self.location.origin)) {
     return;
   }
 
-  // Skip API requests for real-time data
+  // API isteklerini gerçek zamanlı veri için atla
   if (event.request.url.includes('/api/')) {
     return;
   }
@@ -56,14 +56,14 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
-        // Return cached version or fetch from network
+        // Önbelleğe alınmış sürümü döndür veya ağdan getir
         return response || fetch(event.request).then((fetchResponse) => {
-          // Check if we received a valid response
+          // Geçerli bir yanıt aldığımızı kontrol et
           if (!fetchResponse || fetchResponse.status !== 200 || fetchResponse.type !== 'basic') {
             return fetchResponse;
           }
 
-          // Clone the response as it can only be consumed once
+          // Yanıtı klonla çünkü sadece bir kez tüketilebilir
           const responseToCache = fetchResponse.clone();
 
           caches.open(CACHE_NAME)
@@ -75,7 +75,7 @@ self.addEventListener('fetch', (event) => {
         });
       })
       .catch(() => {
-        // Return offline page for navigation requests
+        // Navigasyon istekleri için çevrimdışı sayfasını döndür
         if (event.request.destination === 'document') {
           return caches.match('/');
         }
@@ -83,59 +83,101 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Background sync for offline data
+// Arka plan senkronizasyonu
 self.addEventListener('sync', (event) => {
-  console.log('Service Worker: Background sync', event.tag);
+  console.log('Service Worker: Arka plan senkronizasyonu', event.tag);
   
   if (event.tag === 'background-sync') {
     event.waitUntil(
-      // Add your background sync logic here
-      console.log('Performing background sync...')
+      console.log('Arka plan senkronizasyonu gerçekleştiriliyor...')
     );
   }
 });
 
-// Push notifications
+// Push bildirimleri
 self.addEventListener('push', (event) => {
-  console.log('Service Worker: Push event received');
+  console.log('Service Worker: Push bildirimi alındı');
   
-  const options = {
-    body: event.data ? event.data.text() : 'New debate activity!',
+  let notificationData = {
+    title: 'Tartışma Kulübü',
+    body: 'Yeni tartışma aktivitesi!',
     icon: '/icon-192x192.png',
-    badge: '/icon-192x192.png',
+    badge: '/icon-192x192.png'
+  };
+
+  // Push verisi varsa parse et
+  if (event.data) {
+    try {
+      const pushData = event.data.json();
+      notificationData = {
+        ...notificationData,
+        ...pushData
+      };
+    } catch (e) {
+      notificationData.body = event.data.text();
+    }
+  }
+
+  const options = {
+    body: notificationData.body,
+    icon: notificationData.icon,
+    badge: notificationData.badge,
     vibrate: [100, 50, 100],
     data: {
       dateOfArrival: Date.now(),
-      primaryKey: 1
+      primaryKey: 1,
+      url: notificationData.url || '/'
     },
     actions: [
       {
-        action: 'explore',
-        title: 'View Debates',
+        action: 'open',
+        title: 'Tartışmaları Görüntüle',
         icon: '/icon-192x192.png'
       },
       {
         action: 'close',
-        title: 'Close',
+        title: 'Kapat',
         icon: '/icon-192x192.png'
       }
-    ]
+    ],
+    tag: 'tartisma-kulubu-notification',
+    renotify: true
   };
 
   event.waitUntil(
-    self.registration.showNotification('Debate Club', options)
+    self.registration.showNotification(notificationData.title, options)
   );
 });
 
-// Notification click handler
+// Bildirim tıklama işleyicisi
 self.addEventListener('notificationclick', (event) => {
-  console.log('Service Worker: Notification click received');
+  console.log('Service Worker: Bildirim tıklandı');
   
   event.notification.close();
 
-  if (event.action === 'explore') {
+  if (event.action === 'open' || !event.action) {
+    const urlToOpen = event.notification.data?.url || '/';
+    
     event.waitUntil(
-      clients.openWindow('/')
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+        .then((clients) => {
+          // Zaten açık bir pencere var mı kontrol et
+          for (let client of clients) {
+            if (client.url.includes(self.location.origin) && 'focus' in client) {
+              return client.focus();
+            }
+          }
+          
+          // Yeni pencere aç
+          if (self.clients.openWindow) {
+            return self.clients.openWindow(urlToOpen);
+          }
+        })
     );
   }
+});
+
+// Bildirim kapatma işleyicisi
+self.addEventListener('notificationclose', (event) => {
+  console.log('Service Worker: Bildirim kapatıldı');
 });
