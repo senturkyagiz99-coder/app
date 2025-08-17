@@ -1019,7 +1019,7 @@ function App() {
                           id="topic"
                           value={debateForm.topic}
                           onChange={(e) => setDebateForm({...debateForm, topic: e.target.value})}
-                          placeholder="Ana tartışma konusu"
+                          placeholder="Ana münazara konusu"
                           required
                         />
                       </div>
