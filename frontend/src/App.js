@@ -636,7 +636,7 @@ function App() {
           <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 bg-white border border-red-200">
             <TabsTrigger value="debates" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
               <Trophy className="h-4 w-4 mr-2" />
-              Tartışmalar
+              Münazaralar
             </TabsTrigger>
             <TabsTrigger value="schedule" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
               <Calendar className="h-4 w-4 mr-2" />
