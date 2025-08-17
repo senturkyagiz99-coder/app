@@ -210,10 +210,10 @@ async def create_debate(debate: DebateCreate, current_admin: str = Depends(get_c
     debate_obj = Debate(**debate.dict())
     await db.debates.insert_one(debate_obj.dict())
     
-    # Yeni tartışma bildirimi gönder
+    # Yeni münazara bildirimi gönder
     await send_push_notification(NotificationPayload(
-        title="Yeni Tartışma!",
-        body=f"'{debate.title}' başlıklı yeni tartışma eklendi",
+        title="Yeni Münazara!",
+        body=f"'{debate.title}' başlıklı yeni münazara eklendi",
         url="/"
     ))
     
