@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./components/ui/dialog";
 import { Label } from "./components/ui/label";
 import { Separator } from "./components/ui/separator";
-import { Users, MessageSquare, Calendar, Trophy, Vote, Plus, Lock, LogOut, User, Camera, CreditCard, Upload, DollarSign, Image, Receipt } from "lucide-react";
+import { Users, MessageSquare, Calendar, Trophy, Vote, Plus, Lock, LogOut, User, Camera, CreditCard, Upload, DollarSign, Image, Receipt, Download, Wifi, WifiOff } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -25,6 +25,8 @@ function App() {
   const [selectedDebate, setSelectedDebate] = useState(null);
   const [comments, setComments] = useState([]);
   const [activeTab, setActiveTab] = useState('debates');
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   
   // Forms state
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
@@ -51,6 +53,20 @@ function App() {
     amount: 0,
     debate_id: ''
   });
+
+  // PWA and offline functionality
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     if (token) {
@@ -80,6 +96,13 @@ function App() {
       setDebates(response.data);
     } catch (error) {
       console.error('Error fetching debates:', error);
+      // Load from local storage if offline
+      if (!isOnline) {
+        const cachedDebates = localStorage.getItem('debates');
+        if (cachedDebates) {
+          setDebates(JSON.parse(cachedDebates));
+        }
+      }
     }
   };
 
@@ -87,8 +110,17 @@ function App() {
     try {
       const response = await axios.get(`${API}/photos`);
       setPhotos(response.data);
+      // Cache photos for offline use
+      localStorage.setItem('photos', JSON.stringify(response.data));
     } catch (error) {
       console.error('Error fetching photos:', error);
+      // Load from local storage if offline
+      if (!isOnline) {
+        const cachedPhotos = localStorage.getItem('photos');
+        if (cachedPhotos) {
+          setPhotos(JSON.parse(cachedPhotos));
+        }
+      }
     }
   };
 
@@ -173,6 +205,10 @@ function App() {
 
   const handleCreateDebate = async (e) => {
     e.preventDefault();
+    if (!isOnline) {
+      alert('You need to be online to create debates');
+      return;
+    }
     try {
       await axios.post(`${API}/debates`, debateForm);
       setDebateForm({
@@ -195,6 +231,10 @@ function App() {
       alert('Please enter your name to vote');
       return;
     }
+    if (!isOnline) {
+      alert('You need to be online to vote');
+      return;
+    }
     try {
       await axios.post(`${API}/debates/vote`, {
         debate_id: debateId,
@@ -212,6 +252,10 @@ function App() {
   const handleJoinDebate = async (debateId) => {
     if (!joinForm.participant_name.trim()) {
       alert('Please enter your name to join');
+      return;
+    }
+    if (!isOnline) {
+      alert('You need to be online to join debates');
       return;
     }
     try {
@@ -233,6 +277,10 @@ function App() {
       alert('Please fill in all comment fields');
       return;
     }
+    if (!isOnline) {
+      alert('You need to be online to post comments');
+      return;
+    }
     try {
       await axios.post(`${API}/comments`, {
         debate_id: selectedDebate.id,
@@ -250,6 +298,10 @@ function App() {
     e.preventDefault();
     if (!photoForm.file || !photoForm.title.trim()) {
       alert('Please select a file and enter a title');
+      return;
+    }
+    if (!isOnline) {
+      alert('You need to be online to upload photos');
       return;
     }
 
@@ -282,6 +334,10 @@ function App() {
 
   const handleDeletePhoto = async (photoId) => {
     if (!confirm('Are you sure you want to delete this photo?')) return;
+    if (!isOnline) {
+      alert('You need to be online to delete photos');
+      return;
+    }
     
     try {
       await axios.delete(`${API}/photos/${photoId}`);
@@ -294,6 +350,10 @@ function App() {
 
   const handlePayment = async (e) => {
     e.preventDefault();
+    if (!isOnline) {
+      alert('You need to be online to process payments');
+      return;
+    }
     
     try {
       const response = await axios.post(`${API}/payments/checkout/session`, paymentForm);
