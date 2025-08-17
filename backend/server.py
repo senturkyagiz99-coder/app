@@ -228,7 +228,7 @@ async def get_debates():
 async def get_debate(debate_id: str):
     debate = await db.debates.find_one({"id": debate_id})
     if not debate:
-        raise HTTPException(status_code=404, detail="Debate not found")
+        raise HTTPException(status_code=404, detail="Tartışma bulunamadı")
     return Debate(**debate)
 
 @api_router.put("/debates/{debate_id}", response_model=Debate)
