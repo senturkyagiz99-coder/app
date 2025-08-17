@@ -853,7 +853,7 @@ function App() {
                   Etkinlik Fotoğrafları
                 </CardTitle>
                 <CardDescription>
-                  Geçmiş tartışmalar ve kulüp etkinliklerinden fotoğraflar
+                  Geçmiş münazaralar ve kulüp etkinliklerinden fotoğraflar
                 </CardDescription>
               </CardHeader>
               <CardContent>
