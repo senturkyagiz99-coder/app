@@ -675,7 +675,7 @@ function App() {
                     Club Payments
                   </CardTitle>
                   <CardDescription>
-                    Support the debate club through memberships and donations
+                    Support the debate club through memberships and donations (Turkish Lira)
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
