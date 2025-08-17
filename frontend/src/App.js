@@ -747,7 +747,7 @@ function App() {
                         <div key={transaction.id} className="flex items-center justify-between p-3 border border-red-200 rounded-lg">
                           <div>
                             <div className="font-semibold text-red-700">
-                              ${transaction.amount} - {transaction.payment_type.replace('_', ' ')}
+                              ₺{transaction.amount} - {transaction.payment_type.replace('_', ' ')}
                             </div>
                             <div className="text-sm text-gray-600">
                               {transaction.metadata.member_name} - {formatDate(transaction.created_at)}
