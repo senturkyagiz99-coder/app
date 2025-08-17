@@ -897,7 +897,7 @@ function App() {
                     Kulüp Ödemeleri
                   </CardTitle>
                   <CardDescription>
-                    Üyelikler ve bağışlar yoluyla tartışma kulübünü destekleyin (Türk Lirası)
+                    Üyelikler ve bağışlar yoluyla münazara kulübünü destekleyin (Türk Lirası)
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
