@@ -604,7 +604,7 @@ function App() {
                           id="username"
                           value={loginForm.username}
                           onChange={(e) => setLoginForm({...loginForm, username: e.target.value})}
-                          placeholder="admin"
+                          placeholder="debateclub2025"
                           required
                         />
                       </div>
