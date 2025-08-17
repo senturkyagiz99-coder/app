@@ -1004,12 +1004,12 @@ function App() {
                   <form onSubmit={handleCreateDebate} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor="title">Tartışma Başlığı</Label>
+                        <Label htmlFor="title">Münazara Başlığı</Label>
                         <Input
                           id="title"
                           value={debateForm.title}
                           onChange={(e) => setDebateForm({...debateForm, title: e.target.value})}
-                          placeholder="Tartışma başlığını girin"
+                          placeholder="Münazara başlığını girin"
                           required
                         />
                       </div>
