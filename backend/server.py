@@ -171,10 +171,27 @@ async def get_current_admin(credentials: HTTPAuthorizationCredentials = Depends(
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
-            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+            raise HTTPException(status_code=401, detail="Geçersiz kimlik doğrulama bilgileri")
         return username
     except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+        raise HTTPException(status_code=401, detail="Geçersiz kimlik doğrulama bilgileri")
+
+# Bildirim gönderme fonksiyonu
+async def send_push_notification(payload: NotificationPayload):
+    """Push bildirimi gönder (gerçek implementasyon için push servisi gerekir)"""
+    try:
+        # Push notification subscriptions'ları al
+        subscriptions = await db.push_subscriptions.find().to_list(1000)
+        
+        for subscription in subscriptions:
+            # Burada gerçek push notification servisi kullanılmalı
+            # Şimdilik sadece log'lıyoruz
+            logging.info(f"Push notification sent: {payload.title} - {payload.body}")
+        
+        return True
+    except Exception as e:
+        logging.error(f"Push notification error: {str(e)}")
+        return False
 
 # Routes
 @api_router.post("/admin/login", response_model=Token)
