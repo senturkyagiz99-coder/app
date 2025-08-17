@@ -444,6 +444,8 @@ class DebateClubAPITester:
             print(f"   Found {len(response)} payment transactions")
             return True
         return False
+
+    def test_unauthorized_create_debate(self):
         """Test creating debate without admin token"""
         # Temporarily remove token
         original_token = self.token
