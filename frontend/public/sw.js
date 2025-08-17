@@ -140,7 +140,7 @@ self.addEventListener('push', (event) => {
         icon: '/icon-192x192.png'
       }
     ],
-    tag: 'tartisma-kulubu-notification',
+    tag: 'munazara-kulubu-notification',
     renotify: true
   };
 
