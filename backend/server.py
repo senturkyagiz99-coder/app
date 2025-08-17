@@ -139,14 +139,14 @@ class PaymentRequest(BaseModel):
     debate_id: Optional[str] = None
     member_name: Optional[str] = None
 
-# Fixed payment packages (Turkish Lira)
+# Turkish payment packages (Turkish Lira)
 PAYMENT_PACKAGES = {
-    "membership_monthly": {"amount": 850.0, "description": "Monthly Membership Fee"},
-    "membership_yearly": {"amount": 8500.0, "description": "Yearly Membership Fee"},
-    "event_registration": {"amount": 500.0, "description": "Event Registration Fee"},
-    "donation_small": {"amount": 350.0, "description": "Small Donation"},
-    "donation_medium": {"amount": 1750.0, "description": "Medium Donation"},
-    "donation_large": {"amount": 3500.0, "description": "Large Donation"}
+    "membership_monthly": {"amount": 850.0, "description": "Aylık Üyelik Ücreti"},
+    "membership_yearly": {"amount": 8500.0, "description": "Yıllık Üyelik Ücreti"},
+    "event_registration": {"amount": 500.0, "description": "Etkinlik Kayıt Ücreti"},
+    "donation_small": {"amount": 350.0, "description": "Küçük Bağış"},
+    "donation_medium": {"amount": 1750.0, "description": "Orta Bağış"},
+    "donation_large": {"amount": 3500.0, "description": "Büyük Bağış"}
 }
 
 # Authentication functions
