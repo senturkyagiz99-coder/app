@@ -202,7 +202,7 @@ async def admin_login(admin_data: AdminLogin):
             data={"sub": admin_data.username}, expires_delta=access_token_expires
         )
         return {"access_token": access_token, "token_type": "bearer"}
-    raise HTTPException(status_code=401, detail="Invalid credentials")
+    raise HTTPException(status_code=401, detail="Geçersiz kimlik bilgileri")
 
 # Debate Routes
 @api_router.post("/debates", response_model=Debate)
