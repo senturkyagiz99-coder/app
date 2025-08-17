@@ -403,29 +403,75 @@ class DebateClubAPITester:
         return success
 
     def test_payment_session_authorized(self):
-        """Test payment session creation with admin token"""
+        """Test payment session creation with admin token - Turkish Lira verification"""
         if not self.token:
             print("❌ No admin token available for payment session test")
             return False
             
-        payment_data = {
-            "payment_type": "membership_monthly",
-            "member_name": "Test User"
-        }
+        # Test different payment types
+        payment_tests = [
+            {
+                "payment_type": "membership_monthly",
+                "member_name": "Test User Monthly",
+                "expected_amount": 850.0
+            },
+            {
+                "payment_type": "donation_large", 
+                "member_name": "Test User Donation",
+                "expected_amount": 3500.0
+            },
+            {
+                "payment_type": "donation",
+                "amount": 1250.0,
+                "member_name": "Test User Custom",
+                "expected_amount": 1250.0
+            }
+        ]
         
-        success, response = self.run_test(
-            "Create Payment Session (Authorized)",
-            "POST",
-            "payments/checkout/session",
-            200,
-            data=payment_data
-        )
+        all_passed = True
+        for i, payment_data in enumerate(payment_tests):
+            test_name = f"Create Payment Session #{i+1} ({payment_data['payment_type']})"
+            success, response = self.run_test(
+                test_name,
+                "POST",
+                "payments/checkout/session",
+                200,
+                data=payment_data
+            )
+            
+            if success and 'session_id' in response and 'url' in response:
+                print(f"   ✅ Session ID: {response['session_id']}")
+                print(f"   ✅ Checkout URL: {response['url'][:50]}...")
+                
+                # Verify the session was created with correct currency
+                session_id = response['session_id']
+                status_success, status_response = self.run_test(
+                    f"Check Payment Status #{i+1}",
+                    "GET",
+                    f"payments/checkout/status/{session_id}",
+                    200
+                )
+                
+                if status_success:
+                    currency = status_response.get('currency', '').lower()
+                    amount = status_response.get('amount', 0)
+                    if currency == 'try':
+                        print(f"   ✅ Currency: {currency.upper()} (correct)")
+                    else:
+                        print(f"   ❌ Currency: {currency.upper()} (expected TRY)")
+                        all_passed = False
+                    
+                    if amount == payment_data['expected_amount']:
+                        print(f"   ✅ Amount: ₺{amount} (correct)")
+                    else:
+                        print(f"   ❌ Amount: ₺{amount} (expected ₺{payment_data['expected_amount']})")
+                        all_passed = False
+                else:
+                    all_passed = False
+            else:
+                all_passed = False
         
-        if success and 'session_id' in response and 'url' in response:
-            print(f"   Session ID: {response['session_id']}")
-            print(f"   Checkout URL: {response['url'][:50]}...")
-            return True
-        return False
+        return all_passed
 
     def test_payment_transactions_unauthorized(self):
         """Test getting payment transactions without admin token"""
