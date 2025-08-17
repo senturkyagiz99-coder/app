@@ -298,7 +298,7 @@ async def send_notification(payload: NotificationPayload, current_admin: str = D
 async def vote_on_debate(vote: VoteRequest):
     debate = await db.debates.find_one({"id": vote.debate_id})
     if not debate:
-        raise HTTPException(status_code=404, detail="Tartışma bulunamadı")
+        raise HTTPException(status_code=404, detail="Münazara bulunamadı")
     
     existing_vote = await db.votes.find_one({"debate_id": vote.debate_id, "voter_name": vote.voter_name})
     if existing_vote:
