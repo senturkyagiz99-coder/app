@@ -526,7 +526,7 @@ function App() {
               <div className="bg-red-600 p-2 rounded-full">
                 <Trophy className="h-6 w-6 text-white" />
               </div>
-              <h1 className="text-2xl font-bold text-red-700">Tartışma Kulübü</h1>
+              <h1 className="text-2xl font-bold text-red-700">Münazara Kulübü</h1>
             </div>
             <div className="flex items-center space-x-4">
               {/* Çevrimdışı/Çevrimiçi Durumu */}
