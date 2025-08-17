@@ -298,11 +298,11 @@ async def send_notification(payload: NotificationPayload, current_admin: str = D
 async def vote_on_debate(vote: VoteRequest):
     debate = await db.debates.find_one({"id": vote.debate_id})
     if not debate:
-        raise HTTPException(status_code=404, detail="Debate not found")
+        raise HTTPException(status_code=404, detail="Tartışma bulunamadı")
     
     existing_vote = await db.votes.find_one({"debate_id": vote.debate_id, "voter_name": vote.voter_name})
     if existing_vote:
-        raise HTTPException(status_code=400, detail="You have already voted on this debate")
+        raise HTTPException(status_code=400, detail="Bu tartışmada zaten oy kullandınız")
     
     vote_record = {
         "id": str(uuid.uuid4()),
@@ -318,7 +318,15 @@ async def vote_on_debate(vote: VoteRequest):
     else:
         await db.debates.update_one({"id": vote.debate_id}, {"$inc": {"votes_against": 1}})
     
-    return {"message": "Vote recorded successfully"}
+    # Oy bildirimi gönder
+    vote_text = "lehinde" if vote.vote_type == "for" else "aleyhinde"
+    await send_push_notification(NotificationPayload(
+        title="Yeni Oy!",
+        body=f"'{debate['title']}' tartışmasında {vote_text} yeni oy",
+        url="/"
+    ))
+    
+    return {"message": "Oy başarıyla kaydedildi"}
 
 @api_router.post("/debates/join")
 async def join_debate(participant: ParticipantJoin):
