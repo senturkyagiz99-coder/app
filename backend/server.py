@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, File, UploadFile, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -7,12 +7,13 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict
 import uuid
 from datetime import datetime, timedelta
 import jwt
 from passlib.context import CryptContext
-from email_validator import validate_email, EmailNotValidError
+import shutil
+from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionResponse, CheckoutStatusResponse, CheckoutSessionRequest
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -30,11 +31,18 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
+# Stripe configuration
+stripe_api_key = os.environ.get('STRIPE_API_KEY')
+
 # Create the main app without a prefix
 app = FastAPI()
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+
+# Upload directory
+UPLOAD_DIR = Path(ROOT_DIR) / "uploads" / "photos"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # Pydantic Models
 class AdminLogin(BaseModel):
@@ -51,7 +59,7 @@ class DebateCreate(BaseModel):
     topic: str
     start_time: datetime
     end_time: datetime
-    status: str = "upcoming"  # upcoming, active, completed
+    status: str = "upcoming"
 
 class Debate(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -68,7 +76,7 @@ class Debate(BaseModel):
 
 class VoteRequest(BaseModel):
     debate_id: str
-    vote_type: str  # "for" or "against"
+    vote_type: str
     voter_name: str
 
 class CommentCreate(BaseModel):
@@ -86,6 +94,48 @@ class Comment(BaseModel):
 class ParticipantJoin(BaseModel):
     debate_id: str
     participant_name: str
+
+class Photo(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    filename: str
+    original_name: str
+    title: str
+    description: str
+    event_date: datetime
+    uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+    file_path: str
+
+class PhotoCreate(BaseModel):
+    title: str
+    description: str
+    event_date: str
+
+class PaymentTransaction(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str
+    payment_type: str  # "membership", "event_registration", "donation"
+    amount: float
+    currency: str = "usd"
+    payment_status: str = "pending"
+    metadata: Dict[str, str] = {}
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class PaymentRequest(BaseModel):
+    payment_type: str
+    amount: Optional[float] = None
+    debate_id: Optional[str] = None
+    member_name: Optional[str] = None
+
+# Fixed payment packages
+PAYMENT_PACKAGES = {
+    "membership_monthly": {"amount": 25.0, "description": "Monthly Membership Fee"},
+    "membership_yearly": {"amount": 250.0, "description": "Yearly Membership Fee"},
+    "event_registration": {"amount": 15.0, "description": "Event Registration Fee"},
+    "donation_small": {"amount": 10.0, "description": "Small Donation"},
+    "donation_medium": {"amount": 50.0, "description": "Medium Donation"},
+    "donation_large": {"amount": 100.0, "description": "Large Donation"}
+}
 
 # Authentication functions
 def verify_password(plain_password, hashed_password):
@@ -117,7 +167,6 @@ async def get_current_admin(credentials: HTTPAuthorizationCredentials = Depends(
 # Routes
 @api_router.post("/admin/login", response_model=Token)
 async def admin_login(admin_data: AdminLogin):
-    # Simple admin credentials (in production, store hashed in database)
     if admin_data.username == "admin" and admin_data.password == "debateclub123":
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
@@ -126,6 +175,7 @@ async def admin_login(admin_data: AdminLogin):
         return {"access_token": access_token, "token_type": "bearer"}
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
+# Debate Routes
 @api_router.post("/debates", response_model=Debate)
 async def create_debate(debate: DebateCreate, current_admin: str = Depends(get_current_admin)):
     debate_obj = Debate(**debate.dict())
@@ -169,12 +219,10 @@ async def vote_on_debate(vote: VoteRequest):
     if not debate:
         raise HTTPException(status_code=404, detail="Debate not found")
     
-    # Check if already voted (simple check by voter name)
     existing_vote = await db.votes.find_one({"debate_id": vote.debate_id, "voter_name": vote.voter_name})
     if existing_vote:
         raise HTTPException(status_code=400, detail="You have already voted on this debate")
     
-    # Record the vote
     vote_record = {
         "id": str(uuid.uuid4()),
         "debate_id": vote.debate_id,
@@ -184,7 +232,6 @@ async def vote_on_debate(vote: VoteRequest):
     }
     await db.votes.insert_one(vote_record)
     
-    # Update debate vote counts
     if vote.vote_type == "for":
         await db.debates.update_one({"id": vote.debate_id}, {"$inc": {"votes_for": 1}})
     else:
@@ -198,7 +245,6 @@ async def join_debate(participant: ParticipantJoin):
     if not debate:
         raise HTTPException(status_code=404, detail="Debate not found")
     
-    # Check if already joined
     if participant.participant_name in debate.get("participants", []):
         raise HTTPException(status_code=400, detail="Already joined this debate")
     
@@ -209,6 +255,7 @@ async def join_debate(participant: ParticipantJoin):
     
     return {"message": "Successfully joined the debate"}
 
+# Comment Routes
 @api_router.post("/comments", response_model=Comment)
 async def create_comment(comment: CommentCreate):
     comment_obj = Comment(**comment.dict())
@@ -219,6 +266,209 @@ async def create_comment(comment: CommentCreate):
 async def get_comments(debate_id: str):
     comments = await db.comments.find({"debate_id": debate_id}).sort("created_at", -1).to_list(1000)
     return [Comment(**comment) for comment in comments]
+
+# Photo Routes
+@api_router.post("/photos/upload")
+async def upload_photo(
+    file: UploadFile = File(...),
+    title: str = "",
+    description: str = "",
+    event_date: str = "",
+    current_admin: str = Depends(get_current_admin)
+):
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    
+    # Generate unique filename
+    file_extension = Path(file.filename).suffix
+    unique_filename = f"{uuid.uuid4()}{file_extension}"
+    file_path = UPLOAD_DIR / unique_filename
+    
+    # Save file
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # Create photo record
+    photo_obj = Photo(
+        filename=unique_filename,
+        original_name=file.filename,
+        title=title,
+        description=description,
+        event_date=datetime.fromisoformat(event_date) if event_date else datetime.utcnow(),
+        file_path=str(file_path)
+    )
+    
+    await db.photos.insert_one(photo_obj.dict())
+    return {"message": "Photo uploaded successfully", "photo_id": photo_obj.id}
+
+@api_router.get("/photos", response_model=List[Photo])
+async def get_photos():
+    photos = await db.photos.find().sort("uploaded_at", -1).to_list(1000)
+    return [Photo(**photo) for photo in photos]
+
+@api_router.delete("/photos/{photo_id}")
+async def delete_photo(photo_id: str, current_admin: str = Depends(get_current_admin)):
+    photo = await db.photos.find_one({"id": photo_id})
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    
+    # Delete file from filesystem
+    try:
+        os.remove(photo["file_path"])
+    except FileNotFoundError:
+        pass  # File already deleted or doesn't exist
+    
+    # Delete from database
+    result = await db.photos.delete_one({"id": photo_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    
+    return {"message": "Photo deleted successfully"}
+
+# Payment Routes
+@api_router.get("/payments/packages")
+async def get_payment_packages():
+    return PAYMENT_PACKAGES
+
+@api_router.post("/payments/checkout/session")
+async def create_payment_session(request: Request, payment_request: PaymentRequest, current_admin: str = Depends(get_current_admin)):
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe API key not configured")
+    
+    # Get package details
+    package_key = f"{payment_request.payment_type}"
+    if payment_request.payment_type == "donation" and payment_request.amount:
+        amount = payment_request.amount
+        description = f"Donation - ${amount}"
+    elif package_key in PAYMENT_PACKAGES:
+        amount = PAYMENT_PACKAGES[package_key]["amount"]
+        description = PAYMENT_PACKAGES[package_key]["description"]
+    else:
+        raise HTTPException(status_code=400, detail="Invalid payment package")
+    
+    # Setup Stripe
+    host_url = str(request.base_url).rstrip('/')
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
+    
+    # Create URLs
+    success_url = f"{host_url}/payments/success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{host_url}/payments/cancel"
+    
+    # Metadata
+    metadata = {
+        "payment_type": payment_request.payment_type,
+        "source": "debate_club",
+        "member_name": payment_request.member_name or "Unknown",
+        "debate_id": payment_request.debate_id or ""
+    }
+    
+    # Create checkout session
+    try:
+        checkout_request = CheckoutSessionRequest(
+            amount=amount,
+            currency="usd",
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata=metadata
+        )
+        
+        session = await stripe_checkout.create_checkout_session(checkout_request)
+        
+        # Create payment transaction record
+        transaction = PaymentTransaction(
+            session_id=session.session_id,
+            payment_type=payment_request.payment_type,
+            amount=amount,
+            currency="usd",
+            payment_status="pending",
+            metadata=metadata
+        )
+        
+        await db.payment_transactions.insert_one(transaction.dict())
+        
+        return {"url": session.url, "session_id": session.session_id}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create payment session: {str(e)}")
+
+@api_router.get("/payments/checkout/status/{session_id}")
+async def get_payment_status(session_id: str, current_admin: str = Depends(get_current_admin)):
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe API key not configured")
+    
+    # Get from database first
+    transaction = await db.payment_transactions.find_one({"session_id": session_id})
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Payment transaction not found")
+    
+    # Check with Stripe
+    try:
+        host_url = "https://debatemaster.preview.emergentagent.com"
+        webhook_url = f"{host_url}/api/webhook/stripe"
+        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
+        
+        checkout_status = await stripe_checkout.get_checkout_status(session_id)
+        
+        # Update database if status changed
+        if checkout_status.payment_status != transaction["payment_status"]:
+            await db.payment_transactions.update_one(
+                {"session_id": session_id},
+                {
+                    "$set": {
+                        "payment_status": checkout_status.payment_status,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+        
+        return {
+            "session_id": session_id,
+            "payment_status": checkout_status.payment_status,
+            "status": checkout_status.status,
+            "amount": checkout_status.amount_total / 100,  # Convert from cents
+            "currency": checkout_status.currency
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get payment status: {str(e)}")
+
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe API key not configured")
+    
+    try:
+        body = await request.body()
+        signature = request.headers.get("Stripe-Signature")
+        
+        host_url = "https://debatemaster.preview.emergentagent.com"
+        webhook_url = f"{host_url}/api/webhook/stripe"
+        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
+        
+        webhook_response = await stripe_checkout.handle_webhook(body, signature)
+        
+        # Update transaction in database
+        if webhook_response.session_id:
+            await db.payment_transactions.update_one(
+                {"session_id": webhook_response.session_id},
+                {
+                    "$set": {
+                        "payment_status": webhook_response.payment_status,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+        
+        return {"received": True}
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
+
+@api_router.get("/payments/transactions", response_model=List[PaymentTransaction])
+async def get_payment_transactions(current_admin: str = Depends(get_current_admin)):
+    transactions = await db.payment_transactions.find().sort("created_at", -1).to_list(1000)
+    return [PaymentTransaction(**transaction) for transaction in transactions]
 
 @api_router.get("/")
 async def root():

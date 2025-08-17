@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./components/ui/dialog";
 import { Label } from "./components/ui/label";
 import { Separator } from "./components/ui/separator";
-import { Users, MessageSquare, Calendar, Trophy, Vote, Plus, Lock, LogOut, User } from "lucide-react";
+import { Users, MessageSquare, Calendar, Trophy, Vote, Plus, Lock, LogOut, User, Camera, CreditCard, Upload, DollarSign, Image, Receipt } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -19,6 +19,9 @@ function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [token, setToken] = useState(localStorage.getItem('adminToken') || '');
   const [debates, setDebates] = useState([]);
+  const [photos, setPhotos] = useState([]);
+  const [paymentPackages, setPaymentPackages] = useState({});
+  const [paymentTransactions, setPaymentTransactions] = useState([]);
   const [selectedDebate, setSelectedDebate] = useState(null);
   const [comments, setComments] = useState([]);
   const [activeTab, setActiveTab] = useState('debates');
@@ -36,6 +39,18 @@ function App() {
   const [commentForm, setCommentForm] = useState({ content: '', author_name: '' });
   const [voteForm, setVoteForm] = useState({ voter_name: '' });
   const [joinForm, setJoinForm] = useState({ participant_name: '' });
+  const [photoForm, setPhotoForm] = useState({
+    title: '',
+    description: '',
+    event_date: '',
+    file: null
+  });
+  const [paymentForm, setPaymentForm] = useState({
+    payment_type: 'membership_monthly',
+    member_name: '',
+    amount: 0,
+    debate_id: ''
+  });
 
   useEffect(() => {
     if (token) {
@@ -43,7 +58,21 @@ function App() {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
     fetchDebates();
-  }, [token]);
+    fetchPhotos();
+    fetchPaymentPackages();
+    if (isAdmin) {
+      fetchPaymentTransactions();
+    }
+  }, [token, isAdmin]);
+
+  // Check for payment success/cancel in URL
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const sessionId = urlParams.get('session_id');
+    if (sessionId) {
+      pollPaymentStatus(sessionId);
+    }
+  }, []);
 
   const fetchDebates = async () => {
     try {
@@ -54,12 +83,69 @@ function App() {
     }
   };
 
+  const fetchPhotos = async () => {
+    try {
+      const response = await axios.get(`${API}/photos`);
+      setPhotos(response.data);
+    } catch (error) {
+      console.error('Error fetching photos:', error);
+    }
+  };
+
+  const fetchPaymentPackages = async () => {
+    try {
+      const response = await axios.get(`${API}/payments/packages`);
+      setPaymentPackages(response.data);
+    } catch (error) {
+      console.error('Error fetching payment packages:', error);
+    }
+  };
+
+  const fetchPaymentTransactions = async () => {
+    if (!isAdmin) return;
+    try {
+      const response = await axios.get(`${API}/payments/transactions`);
+      setPaymentTransactions(response.data);
+    } catch (error) {
+      console.error('Error fetching payment transactions:', error);
+    }
+  };
+
   const fetchComments = async (debateId) => {
     try {
       const response = await axios.get(`${API}/comments/${debateId}`);
       setComments(response.data);
     } catch (error) {
       console.error('Error fetching comments:', error);
+    }
+  };
+
+  const pollPaymentStatus = async (sessionId, attempts = 0) => {
+    const maxAttempts = 10;
+    if (attempts >= maxAttempts) {
+      alert('Payment status check timed out. Please contact admin if payment was made.');
+      return;
+    }
+
+    try {
+      const response = await axios.get(`${API}/payments/checkout/status/${sessionId}`);
+      const data = response.data;
+      
+      if (data.payment_status === 'paid') {
+        alert('Payment successful! Thank you for your contribution.');
+        if (isAdmin) {
+          fetchPaymentTransactions();
+        }
+        return;
+      } else if (data.status === 'expired') {
+        alert('Payment session expired. Please try again.');
+        return;
+      }
+
+      // Continue polling if still pending
+      setTimeout(() => pollPaymentStatus(sessionId, attempts + 1), 2000);
+    } catch (error) {
+      console.error('Error checking payment status:', error);
     }
   };
 
@@ -98,6 +184,7 @@ function App() {
         status: 'upcoming'
       });
       fetchDebates();
+      alert('Debate created successfully!');
     } catch (error) {
       alert('Error creating debate');
     }
@@ -159,6 +246,69 @@ function App() {
     }
   };
 
+  const handlePhotoUpload = async (e) => {
+    e.preventDefault();
+    if (!photoForm.file || !photoForm.title.trim()) {
+      alert('Please select a file and enter a title');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', photoForm.file);
+    formData.append('title', photoForm.title);
+    formData.append('description', photoForm.description);
+    formData.append('event_date', photoForm.event_date);
+
+    try {
+      await axios.post(`${API}/photos/upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      setPhotoForm({
+        title: '',
+        description: '',
+        event_date: '',
+        file: null
+      });
+      // Reset file input
+      document.getElementById('photo-upload').value = '';
+      fetchPhotos();
+      alert('Photo uploaded successfully!');
+    } catch (error) {
+      alert('Error uploading photo');
+    }
+  };
+
+  const handleDeletePhoto = async (photoId) => {
+    if (!confirm('Are you sure you want to delete this photo?')) return;
+    
+    try {
+      await axios.delete(`${API}/photos/${photoId}`);
+      fetchPhotos();
+      alert('Photo deleted successfully!');
+    } catch (error) {
+      alert('Error deleting photo');
+    }
+  };
+
+  const handlePayment = async (e) => {
+    e.preventDefault();
+    
+    try {
+      const response = await axios.post(`${API}/payments/checkout/session`, paymentForm);
+      
+      if (response.data.url) {
+        // Redirect to Stripe checkout
+        window.location.href = response.data.url;
+      } else {
+        alert('Error creating payment session');
+      }
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Error processing payment');
+    }
+  };
+
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleString();
   };
@@ -168,6 +318,15 @@ function App() {
       case 'upcoming': return 'bg-blue-500';
       case 'active': return 'bg-green-500';
       case 'completed': return 'bg-gray-500';
+      default: return 'bg-gray-500';
+    }
+  };
+
+  const getPaymentStatusColor = (status) => {
+    switch (status) {
+      case 'paid': return 'bg-green-500';
+      case 'pending': return 'bg-yellow-500';
+      case 'failed': return 'bg-red-500';
       default: return 'bg-gray-500';
     }
   };
@@ -252,7 +411,7 @@ function App() {
 
       <div className="container mx-auto px-6 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-4 bg-white border border-red-200">
+          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 bg-white border border-red-200">
             <TabsTrigger value="debates" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
               <Trophy className="h-4 w-4 mr-2" />
               Debates
@@ -261,15 +420,26 @@ function App() {
               <Calendar className="h-4 w-4 mr-2" />
               Schedule
             </TabsTrigger>
-            {isAdmin && (
-              <TabsTrigger value="admin" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
-                <Plus className="h-4 w-4 mr-2" />
-                Create Debate
-              </TabsTrigger>
-            )}
-            <TabsTrigger value="about" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
-              About
+            <TabsTrigger value="photos" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
+              <Camera className="h-4 w-4 mr-2" />
+              Photos
             </TabsTrigger>
+            <TabsTrigger value="payments" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
+              <CreditCard className="h-4 w-4 mr-2" />
+              Payments
+            </TabsTrigger>
+            {isAdmin && (
+              <>
+                <TabsTrigger value="admin" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create
+                </TabsTrigger>
+                <TabsTrigger value="admin-photos" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload
+                </TabsTrigger>
+              </>
+            )}
           </TabsList>
 
           {/* Debates Tab */}
@@ -452,7 +622,150 @@ function App() {
             </Card>
           </TabsContent>
 
-          {/* Admin Tab */}
+          {/* Photos Tab */}
+          <TabsContent value="photos">
+            <Card className="border-red-200">
+              <CardHeader>
+                <CardTitle className="text-red-700 flex items-center">
+                  <Camera className="h-5 w-5 mr-2" />
+                  Event Photos
+                </CardTitle>
+                <CardDescription>
+                  Photos from past debates and club activities
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                  {photos.map((photo) => (
+                    <Card key={photo.id} className="border-red-200 overflow-hidden">
+                      <div className="aspect-video bg-gray-200 flex items-center justify-center">
+                        <Image className="h-12 w-12 text-gray-400" />
+                      </div>
+                      <CardContent className="p-4">
+                        <h3 className="font-semibold text-red-700 mb-2">{photo.title}</h3>
+                        <p className="text-sm text-gray-600 mb-2">{photo.description}</p>
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <span>{formatDate(photo.event_date)}</span>
+                          {isAdmin && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleDeletePhoto(photo.id)}
+                              className="border-red-300 text-red-700 hover:bg-red-50"
+                            >
+                              Delete
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Payments Tab */}
+          <TabsContent value="payments">
+            <div className="space-y-6">
+              <Card className="border-red-200">
+                <CardHeader>
+                  <CardTitle className="text-red-700 flex items-center">
+                    <CreditCard className="h-5 w-5 mr-2" />
+                    Club Payments
+                  </CardTitle>
+                  <CardDescription>
+                    Support the debate club through memberships and donations
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handlePayment} className="space-y-4">
+                    <div>
+                      <Label htmlFor="payment_type">Payment Type</Label>
+                      <select 
+                        id="payment_type"
+                        value={paymentForm.payment_type}
+                        onChange={(e) => setPaymentForm({...paymentForm, payment_type: e.target.value})}
+                        className="w-full p-2 border border-gray-300 rounded-md"
+                      >
+                        {Object.entries(paymentPackages).map(([key, pkg]) => (
+                          <option key={key} value={key}>
+                            {pkg.description} - ${pkg.amount}
+                          </option>
+                        ))}
+                        <option value="donation">Custom Donation</option>
+                      </select>
+                    </div>
+                    
+                    {paymentForm.payment_type === 'donation' && (
+                      <div>
+                        <Label htmlFor="amount">Donation Amount ($)</Label>
+                        <Input
+                          id="amount"
+                          type="number"
+                          step="0.01"
+                          min="1"
+                          value={paymentForm.amount}
+                          onChange={(e) => setPaymentForm({...paymentForm, amount: parseFloat(e.target.value)})}
+                          placeholder="Enter amount"
+                          required
+                        />
+                      </div>
+                    )}
+                    
+                    <div>
+                      <Label htmlFor="member_name">Your Name</Label>
+                      <Input
+                        id="member_name"
+                        value={paymentForm.member_name}
+                        onChange={(e) => setPaymentForm({...paymentForm, member_name: e.target.value})}
+                        placeholder="Enter your name"
+                        required
+                      />
+                    </div>
+                    
+                    <Button type="submit" className="w-full bg-red-600 hover:bg-red-700">
+                      <DollarSign className="h-4 w-4 mr-2" />
+                      Proceed to Payment
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+
+              {/* Payment Transactions (Admin Only) */}
+              {isAdmin && (
+                <Card className="border-red-200">
+                  <CardHeader>
+                    <CardTitle className="text-red-700 flex items-center">
+                      <Receipt className="h-5 w-5 mr-2" />
+                      Payment Transactions
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {paymentTransactions.map((transaction) => (
+                        <div key={transaction.id} className="flex items-center justify-between p-3 border border-red-200 rounded-lg">
+                          <div>
+                            <div className="font-semibold text-red-700">
+                              ${transaction.amount} - {transaction.payment_type.replace('_', ' ')}
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              {transaction.metadata.member_name} - {formatDate(transaction.created_at)}
+                            </div>
+                          </div>
+                          <Badge className={`${getPaymentStatusColor(transaction.payment_status)} text-white`}>
+                            {transaction.payment_status}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Admin Create Debate Tab */}
           {isAdmin && (
             <TabsContent value="admin">
               <Card className="border-red-200">
@@ -531,37 +844,71 @@ function App() {
             </TabsContent>
           )}
 
-          {/* About Tab */}
-          <TabsContent value="about">
-            <Card className="border-red-200">
-              <CardHeader>
-                <CardTitle className="text-red-700">About Debate Club</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-gray-700">
-                  Welcome to our Debate Club platform! This is where passionate debaters come together to 
-                  engage in meaningful discussions on various topics.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="text-center p-4 border border-red-200 rounded-lg">
-                    <Trophy className="h-8 w-8 text-red-600 mx-auto mb-2" />
-                    <h3 className="font-semibold text-red-700">Competitive Debates</h3>
-                    <p className="text-sm text-gray-600">Structured debates with voting and scoring</p>
-                  </div>
-                  <div className="text-center p-4 border border-red-200 rounded-lg">
-                    <Users className="h-8 w-8 text-red-600 mx-auto mb-2" />
-                    <h3 className="font-semibold text-red-700">Community Driven</h3>
-                    <p className="text-sm text-gray-600">Join discussions and share your perspectives</p>
-                  </div>
-                  <div className="text-center p-4 border border-red-200 rounded-lg">
-                    <Calendar className="h-8 w-8 text-red-600 mx-auto mb-2" />
-                    <h3 className="font-semibold text-red-700">Scheduled Events</h3>
-                    <p className="text-sm text-gray-600">Regular debate sessions and special events</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+          {/* Admin Photo Upload Tab */}
+          {isAdmin && (
+            <TabsContent value="admin-photos">
+              <Card className="border-red-200">
+                <CardHeader>
+                  <CardTitle className="text-red-700 flex items-center">
+                    <Upload className="h-5 w-5 mr-2" />
+                    Upload Event Photos
+                  </CardTitle>
+                  <CardDescription>
+                    Add photos from debates and club activities
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handlePhotoUpload} className="space-y-4">
+                    <div>
+                      <Label htmlFor="photo-upload">Photo File</Label>
+                      <Input
+                        id="photo-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setPhotoForm({...photoForm, file: e.target.files[0]})}
+                        required
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="photo-title">Photo Title</Label>
+                        <Input
+                          id="photo-title"
+                          value={photoForm.title}
+                          onChange={(e) => setPhotoForm({...photoForm, title: e.target.value})}
+                          placeholder="Enter photo title"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="event-date">Event Date</Label>
+                        <Input
+                          id="event-date"
+                          type="date"
+                          value={photoForm.event_date}
+                          onChange={(e) => setPhotoForm({...photoForm, event_date: e.target.value})}
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="photo-description">Description</Label>
+                      <Textarea
+                        id="photo-description"
+                        value={photoForm.description}
+                        onChange={(e) => setPhotoForm({...photoForm, description: e.target.value})}
+                        placeholder="Describe the event or photo context"
+                      />
+                    </div>
+                    <Button type="submit" className="bg-red-600 hover:bg-red-700">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload Photo
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
         </Tabs>
       </div>
 
