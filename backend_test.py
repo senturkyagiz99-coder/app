@@ -6,7 +6,7 @@ import io
 import os
 
 class DebateClubAPITester:
-    def __init__(self, base_url="https://debatemaster.preview.emergentagent.com"):
+    def __init__(self, base_url="https://801f5720-a5b2-4d01-b6a4-ac433b5f417e.preview.emergentagent.com"):
         self.base_url = base_url
         self.api_url = f"{base_url}/api"
         self.token = None
