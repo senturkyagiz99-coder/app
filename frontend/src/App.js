@@ -1076,7 +1076,7 @@ function App() {
                     Etkinlik Fotoğrafları Yükle
                   </CardTitle>
                   <CardDescription>
-                    Tartışmalar ve kulüp etkinliklerinden fotoğraf ekleyin
+                    Münazaralar ve kulüp etkinliklerinden fotoğraf ekleyin
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
