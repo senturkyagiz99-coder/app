@@ -1,7 +1,7 @@
 {
-  "short_name": "Tartışma Kulübü",
-  "name": "Tartışma Kulübü Yönetim Uygulaması",
-  "description": "Tartışma kulübü aktivitelerini, oylamaları ve etkinlikleri yönetmek için kapsamlı platform",
+  "short_name": "Münazara Kulübü",
+  "name": "Münazara Kulübü Yönetim Uygulaması",
+  "description": "Münazara kulübü aktivitelerini, oylamaları ve etkinlikleri yönetmek için kapsamlı platform",
   "icons": [
     {
       "src": "icon-192x192.png",
