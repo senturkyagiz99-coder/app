@@ -99,8 +99,8 @@ self.addEventListener('push', (event) => {
   console.log('Service Worker: Push bildirimi alındı');
   
   let notificationData = {
-    title: 'Tartışma Kulübü',
-    body: 'Yeni tartışma aktivitesi!',
+    title: 'Münazara Kulübü',
+    body: 'Yeni münazara aktivitesi!',
     icon: '/icon-192x192.png',
     badge: '/icon-192x192.png'
   };
