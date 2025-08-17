@@ -244,9 +244,9 @@ class DebateClubAPITester:
         return False
 
     def test_get_payment_packages(self):
-        """Test getting payment packages"""
+        """Test getting payment packages - Turkish Lira verification"""
         success, response = self.run_test(
-            "Get Payment Packages",
+            "Get Payment Packages (Turkish Lira)",
             "GET",
             "payments/packages",
             200
@@ -254,14 +254,31 @@ class DebateClubAPITester:
         
         if success and isinstance(response, dict):
             print(f"   Found {len(response)} payment packages")
-            expected_packages = ['membership_monthly', 'membership_yearly', 'event_registration', 
-                               'donation_small', 'donation_medium', 'donation_large']
-            for package in expected_packages:
+            
+            # Expected Turkish Lira amounts
+            expected_packages = {
+                'membership_monthly': 850.0,
+                'membership_yearly': 8500.0,
+                'event_registration': 500.0,
+                'donation_small': 350.0,
+                'donation_medium': 1750.0,
+                'donation_large': 3500.0
+            }
+            
+            all_correct = True
+            for package, expected_amount in expected_packages.items():
                 if package in response:
-                    print(f"   ✓ Package '{package}': ${response[package]['amount']}")
+                    actual_amount = response[package]['amount']
+                    if actual_amount == expected_amount:
+                        print(f"   ✅ Package '{package}': ₺{actual_amount} (correct)")
+                    else:
+                        print(f"   ❌ Package '{package}': ₺{actual_amount} (expected ₺{expected_amount})")
+                        all_correct = False
                 else:
                     print(f"   ❌ Missing package: {package}")
-            return True
+                    all_correct = False
+            
+            return all_correct
         return False
 
     def test_get_photos(self):
