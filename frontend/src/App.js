@@ -10,18 +10,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./components/ui/dialog";
 import { Label } from "./components/ui/label";
 import { Separator } from "./components/ui/separator";
-import { Users, MessageSquare, Calendar, Trophy, Vote, Plus, Lock, LogOut, User, Camera, CreditCard, Upload, DollarSign, Image, Receipt, Download, Wifi, WifiOff, Bell, BellOff } from "lucide-react";
+import { Users, MessageSquare, Calendar, Trophy, Vote, Plus, Lock, LogOut, User, Camera, Upload, Bell, BellOff, Wifi, WifiOff, Trash2 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 function App() {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('adminToken') || '');
   const [debates, setDebates] = useState([]);
   const [photos, setPhotos] = useState([]);
-  const [paymentPackages, setPaymentPackages] = useState({});
-  const [paymentTransactions, setPaymentTransactions] = useState([]);
   const [selectedDebate, setSelectedDebate] = useState(null);
   const [comments, setComments] = useState([]);
   const [activeTab, setActiveTab] = useState('debates');
@@ -48,12 +47,6 @@ function App() {
     event_date: '',
     file: null
   });
-  const [paymentForm, setPaymentForm] = useState({
-    payment_type: 'membership_monthly',
-    member_name: '',
-    amount: 0,
-    debate_id: ''
-  });
 
   // PWA ve çevrimdışı işlevsellik
   useEffect(() => {
@@ -77,6 +70,15 @@ function App() {
     }
   }, []);
 
+  // Check for Google OAuth callback on page load
+  useEffect(() => {
+    const urlFragment = window.location.hash;
+    if (urlFragment.includes('session_id=')) {
+      const sessionId = urlFragment.split('session_id=')[1];
+      handleGoogleCallback(sessionId);
+    }
+  }, []);
+
   useEffect(() => {
     if (token) {
       setIsAdmin(true);
@@ -84,20 +86,8 @@ function App() {
     }
     fetchDebates();
     fetchPhotos();
-    fetchPaymentPackages();
-    if (isAdmin) {
-      fetchPaymentTransactions();
-    }
-  }, [token, isAdmin]);
-
-  // Ödeme başarısı/iptali URL'sini kontrol et
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const sessionId = urlParams.get('session_id');
-    if (sessionId) {
-      pollPaymentStatus(sessionId);
-    }
-  }, []);
+    checkUserAuth();
+  }, [token]);
 
   // Push bildirimleri için service worker'ı kaydet
   useEffect(() => {
@@ -112,6 +102,44 @@ function App() {
       console.log('Service Worker kaydedildi:', registration);
     } catch (error) {
       console.error('Service Worker kayıt hatası:', error);
+    }
+  };
+
+  const checkUserAuth = async () => {
+    try {
+      const response = await axios.get(`${API}/auth/profile`, { withCredentials: true });
+      setUser(response.data);
+    } catch (error) {
+      // User not authenticated
+      setUser(null);
+    }
+  };
+
+  const handleGoogleLogin = () => {
+    const currentUrl = window.location.origin;
+    const redirectUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(currentUrl + '/profile')}`;
+    window.location.href = redirectUrl;
+  };
+
+  const handleGoogleCallback = async (sessionId) => {
+    try {
+      const response = await axios.post(`${API}/auth/callback?session_id=${sessionId}`, {}, { withCredentials: true });
+      setUser(response.data.user);
+      // Clear the URL fragment
+      window.history.replaceState({}, document.title, window.location.pathname);
+      alert('Google ile giriş başarılı!');
+    } catch (error) {
+      console.error('Google callback error:', error);
+      alert('Google girişinde hata oluştu');
+    }
+  };
+
+  const handleLogoutUser = async () => {
+    try {
+      await axios.post(`${API}/auth/logout`, {}, { withCredentials: true });
+      setUser(null);
+    } catch (error) {
+      console.error('Logout error:', error);
     }
   };
 
@@ -202,7 +230,7 @@ function App() {
       // Çevrimdışı kullanım için önbelleğe al
       localStorage.setItem('debates', JSON.stringify(response.data));
     } catch (error) {
-      console.error('Tartışmalar yüklenirken hata:', error);
+      console.error('Münazaralar yüklenirken hata:', error);
       // Çevrimdışıysa yerel depolamadan yükle
       if (!isOnline) {
         const cachedDebates = localStorage.getItem('debates');
@@ -231,60 +259,12 @@ function App() {
     }
   };
 
-  const fetchPaymentPackages = async () => {
-    try {
-      const response = await axios.get(`${API}/payments/packages`);
-      setPaymentPackages(response.data);
-    } catch (error) {
-      console.error('Ödeme paketleri yüklenirken hata:', error);
-    }
-  };
-
-  const fetchPaymentTransactions = async () => {
-    if (!isAdmin) return;
-    try {
-      const response = await axios.get(`${API}/payments/transactions`);
-      setPaymentTransactions(response.data);
-    } catch (error) {
-      console.error('Ödeme işlemleri yüklenirken hata:', error);
-    }
-  };
-
   const fetchComments = async (debateId) => {
     try {
       const response = await axios.get(`${API}/comments/${debateId}`);
       setComments(response.data);
     } catch (error) {
       console.error('Yorumlar yüklenirken hata:', error);
-    }
-  };
-
-  const pollPaymentStatus = async (sessionId, attempts = 0) => {
-    const maxAttempts = 10;
-    if (attempts >= maxAttempts) {
-      alert('Ödeme durumu kontrol zaman aşımına uğradı. Ödeme yaptıysanız lütfen yöneticiyle iletişime geçin.');
-      return;
-    }
-
-    try {
-      const response = await axios.get(`${API}/payments/checkout/status/${sessionId}`);
-      const data = response.data;
-      
-      if (data.payment_status === 'paid') {
-        alert('Ödeme başarılı! Katkınız için teşekkürler.');
-        if (isAdmin) {
-          fetchPaymentTransactions();
-        }
-        return;
-      } else if (data.status === 'expired') {
-        alert('Ödeme oturumu süresi doldu. Lütfen tekrar deneyin.');
-        return;
-      }
-
-      // Hala beklemedeyse yoklamaya devam et
-      setTimeout(() => pollPaymentStatus(sessionId, attempts + 1), 2000);
-    } catch (error) {
-      console.error('Ödeme durumu kontrol hatası:', error);
     }
   };
 
@@ -330,6 +310,21 @@ function App() {
       alert('Münazara başarıyla oluşturuldu!');
     } catch (error) {
       alert('Münazara oluşturulurken hata');
+    }
+  };
+
+  const handleDeleteDebate = async (debateId) => {
+    if (!confirm('Bu münazarayı silmek istediğinizden emin misiniz?')) return;
+    if (!isOnline) {
+      alert('Münazara silmek için çevrimiçi olmanız gerekir');
+      return;
+    }
+    try {
+      await axios.delete(`${API}/debates/${debateId}`);
+      fetchDebates();
+      alert('Münazara başarıyla silindi!');
+    } catch (error) {
+      alert('Münazara silinirken hata');
     }
   };
 
@@ -455,27 +450,6 @@ function App() {
     }
   };
 
-  const handlePayment = async (e) => {
-    e.preventDefault();
-    if (!isOnline) {
-      alert('Ödeme işlemi için çevrimiçi olmanız gerekir');
-      return;
-    }
-    
-    try {
-      const response = await axios.post(`${API}/payments/checkout/session`, paymentForm);
-      
-      if (response.data.url) {
-        // Stripe checkout'a yönlendir
-        window.location.href = response.data.url;
-      } else {
-        alert('Ödeme oturumu oluşturulurken hata');
-      }
-    } catch (error) {
-      alert(error.response?.data?.detail || 'Ödeme işlemi hatası');
-    }
-  };
-
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleString('tr-TR');
   };
@@ -494,24 +468,6 @@ function App() {
       case 'upcoming': return 'Yaklaşan';
       case 'active': return 'Aktif';
       case 'completed': return 'Tamamlandı';
-      default: return 'Bilinmiyor';
-    }
-  };
-
-  const getPaymentStatusColor = (status) => {
-    switch (status) {
-      case 'paid': return 'bg-green-500';
-      case 'pending': return 'bg-yellow-500';
-      case 'failed': return 'bg-red-500';
-      default: return 'bg-gray-500';
-    }
-  };
-
-  const getPaymentStatusText = (status) => {
-    switch (status) {
-      case 'paid': return 'Ödendi';
-      case 'pending': return 'Beklemede';
-      case 'failed': return 'Başarısız';
       default: return 'Bilinmiyor';
     }
   };
@@ -565,7 +521,33 @@ function App() {
                   )}
                 </Button>
               </div>
+
+              {/* User Authentication */}
+              {user ? (
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-2">
+                    {user.picture && (
+                      <img src={user.picture} alt={user.name} className="w-8 h-8 rounded-full" />
+                    )}
+                    <span className="text-sm font-medium text-gray-700">{user.name}</span>
+                  </div>
+                  <Button 
+                    onClick={handleLogoutUser}
+                    variant="outline" 
+                    size="sm"
+                    className="border-red-300 text-red-700 hover:bg-red-50"
+                  >
+                    <LogOut className="h-4 w-4 mr-1" />
+                    Çıkış
+                  </Button>
+                </div>
+              ) : (
+                <Button onClick={handleGoogleLogin} className="bg-blue-600 hover:bg-blue-700">
+                  Google ile Giriş Yap
+                </Button>
+              )}
               
+              {/* Admin Panel */}
               {isAdmin ? (
                 <div className="flex items-center space-x-3">
                   <Badge variant="secondary" className="bg-red-100 text-red-700">
@@ -579,7 +561,7 @@ function App() {
                     className="border-red-300 text-red-700 hover:bg-red-50"
                   >
                     <LogOut className="h-4 w-4 mr-1" />
-                    Çıkış
+                    Admin Çıkış
                   </Button>
                 </div>
               ) : (
@@ -615,7 +597,7 @@ function App() {
                           type="password"
                           value={loginForm.password}
                           onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
-                          placeholder="onlinedebate"
+                          placeholder="••••••••••••"
                           required
                         />
                       </div>
@@ -633,7 +615,7 @@ function App() {
 
       <div className="container mx-auto px-6 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 bg-white border border-red-200">
+          <TabsList className="grid w-full grid-cols-2 lg:grid-cols-4 bg-white border border-red-200">
             <TabsTrigger value="debates" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
               <Trophy className="h-4 w-4 mr-2" />
               Münazaralar
@@ -645,10 +627,6 @@ function App() {
             <TabsTrigger value="photos" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
               <Camera className="h-4 w-4 mr-2" />
               Fotoğraflar
-            </TabsTrigger>
-            <TabsTrigger value="payments" className="data-[state=active]:bg-red-600 data-[state=active]:text-white">
-              <CreditCard className="h-4 w-4 mr-2" />
-              Ödemeler
             </TabsTrigger>
             {isAdmin && (
               <>
@@ -664,7 +642,7 @@ function App() {
             )}
           </TabsList>
 
-          {/* Tartışmalar Sekmesi */}
+          {/* Münazaralar Sekmesi */}
           <TabsContent value="debates" className="space-y-6">
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {debates.map((debate) => (
@@ -674,9 +652,22 @@ function App() {
                       <Badge className={`${getStatusColor(debate.status)} text-white`}>
                         {getStatusText(debate.status)}
                       </Badge>
-                      <div className="flex items-center space-x-2 text-sm text-gray-500">
-                        <Users className="h-4 w-4" />
-                        <span>{debate.participants?.length || 0}</span>
+                      <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-1 text-sm text-gray-500">
+                          <Users className="h-4 w-4" />
+                          <span>{debate.participants?.length || 0}</span>
+                        </div>
+                        {/* Admin silme butonu */}
+                        {isAdmin && (
+                          <Button
+                            onClick={() => handleDeleteDebate(debate.id)}
+                            variant="outline"
+                            size="sm"
+                            className="border-red-300 text-red-700 hover:bg-red-50 p-1 h-6 w-6"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                     <CardTitle className="text-red-700">{debate.title}</CardTitle>
@@ -834,9 +825,21 @@ function App() {
                         <p className="text-sm text-gray-600">{debate.topic}</p>
                         <p className="text-xs text-gray-500">{formatDate(debate.start_time)}</p>
                       </div>
-                      <Badge className={`${getStatusColor(debate.status)} text-white`}>
-                        {getStatusText(debate.status)}
-                      </Badge>
+                      <div className="flex items-center space-x-2">
+                        <Badge className={`${getStatusColor(debate.status)} text-white`}>
+                          {getStatusText(debate.status)}
+                        </Badge>
+                        {isAdmin && (
+                          <Button
+                            onClick={() => handleDeleteDebate(debate.id)}
+                            variant="outline"
+                            size="sm"
+                            className="border-red-300 text-red-700 hover:bg-red-50 p-1 h-6 w-6"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -861,7 +864,7 @@ function App() {
                   {photos.map((photo) => (
                     <Card key={photo.id} className="border-red-200 overflow-hidden">
                       <div className="aspect-video bg-gray-200 flex items-center justify-center">
-                        <Image className="h-12 w-12 text-gray-400" />
+                        <Camera className="h-12 w-12 text-gray-400" />
                       </div>
                       <CardContent className="p-4">
                         <h3 className="font-semibold text-red-700 mb-2">{photo.title}</h3>
@@ -887,107 +890,7 @@ function App() {
             </Card>
           </TabsContent>
 
-          {/* Ödemeler Sekmesi */}
-          <TabsContent value="payments">
-            <div className="space-y-6">
-              <Card className="border-red-200">
-                <CardHeader>
-                  <CardTitle className="text-red-700 flex items-center">
-                    <CreditCard className="h-5 w-5 mr-2" />
-                    Kulüp Ödemeleri
-                  </CardTitle>
-                  <CardDescription>
-                    Üyelikler ve bağışlar yoluyla münazara kulübünü destekleyin (Türk Lirası)
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={handlePayment} className="space-y-4">
-                    <div>
-                      <Label htmlFor="payment_type">Ödeme Türü</Label>
-                      <select 
-                        id="payment_type"
-                        value={paymentForm.payment_type}
-                        onChange={(e) => setPaymentForm({...paymentForm, payment_type: e.target.value})}
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                      >
-                        {Object.entries(paymentPackages).map(([key, pkg]) => (
-                          <option key={key} value={key}>
-                            {pkg.description} - ₺{pkg.amount}
-                          </option>
-                        ))}
-                        <option value="donation">Özel Bağış</option>
-                      </select>
-                    </div>
-                    
-                    {paymentForm.payment_type === 'donation' && (
-                      <div>
-                        <Label htmlFor="amount">Bağış Miktarı (₺)</Label>
-                        <Input
-                          id="amount"
-                          type="number"
-                          step="0.01"
-                          min="1"
-                          value={paymentForm.amount}
-                          onChange={(e) => setPaymentForm({...paymentForm, amount: parseFloat(e.target.value)})}
-                          placeholder="Türk Lirası cinsinden miktar girin"
-                          required
-                        />
-                      </div>
-                    )}
-                    
-                    <div>
-                      <Label htmlFor="member_name">Adınız</Label>
-                      <Input
-                        id="member_name"
-                        value={paymentForm.member_name}
-                        onChange={(e) => setPaymentForm({...paymentForm, member_name: e.target.value})}
-                        placeholder="Adınızı girin"
-                        required
-                      />
-                    </div>
-                    
-                    <Button type="submit" className="w-full bg-red-600 hover:bg-red-700">
-                      <DollarSign className="h-4 w-4 mr-2" />
-                      Ödemeye İlerle
-                    </Button>
-                  </form>
-                </CardContent>
-              </Card>
-
-              {/* Ödeme İşlemleri (Sadece Yönetici) */}
-              {isAdmin && (
-                <Card className="border-red-200">
-                  <CardHeader>
-                    <CardTitle className="text-red-700 flex items-center">
-                      <Receipt className="h-5 w-5 mr-2" />
-                      Ödeme İşlemleri
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {paymentTransactions.map((transaction) => (
-                        <div key={transaction.id} className="flex items-center justify-between p-3 border border-red-200 rounded-lg">
-                          <div>
-                            <div className="font-semibold text-red-700">
-                              ₺{transaction.amount} - {transaction.payment_type.replace('_', ' ')}
-                            </div>
-                            <div className="text-sm text-gray-600">
-                              {transaction.metadata.member_name} - {formatDate(transaction.created_at)}
-                            </div>
-                          </div>
-                          <Badge className={`${getPaymentStatusColor(transaction.payment_status)} text-white`}>
-                            {getPaymentStatusText(transaction.payment_status)}
-                          </Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </TabsContent>
-
-          {/* Yönetici Tartışma Oluştur Sekmesi */}
+          {/* Yönetici Münazara Oluştur Sekmesi */}
           {isAdmin && (
             <TabsContent value="admin">
               <Card className="border-red-200">

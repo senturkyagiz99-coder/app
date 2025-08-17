@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, File, UploadFile, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, File, UploadFile, Request, Response, Cookie
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -13,9 +13,9 @@ from datetime import datetime, timedelta
 import jwt
 from passlib.context import CryptContext
 import shutil
-from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionResponse, CheckoutStatusResponse, CheckoutSessionRequest
 import asyncio
 import json
+import aiohttp
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -32,9 +32,6 @@ security = HTTPBearer()
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
-
-# Stripe configuration
-stripe_api_key = os.environ.get('STRIPE_API_KEY')
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -54,6 +51,15 @@ class AdminLogin(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+class User(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    email: str
+    name: str
+    picture: Optional[str] = None
+    session_token: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 class DebateCreate(BaseModel):
     title: str
@@ -75,10 +81,11 @@ class Debate(BaseModel):
     votes_for: int = 0
     votes_against: int = 0
     participants: List[str] = []
+    created_by: Optional[str] = None  # Admin who created it
 
 class VoteRequest(BaseModel):
     debate_id: str
-    vote_type: str
+    vote_type: str  # "for" or "against"
     voter_name: str
 
 class CommentCreate(BaseModel):
@@ -122,33 +129,6 @@ class PhotoCreate(BaseModel):
     description: str
     event_date: str
 
-class PaymentTransaction(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    session_id: str
-    payment_type: str  # "membership", "event_registration", "donation"
-    amount: float
-    currency: str = "try"
-    payment_status: str = "pending"
-    metadata: Dict[str, str] = {}
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-class PaymentRequest(BaseModel):
-    payment_type: str
-    amount: Optional[float] = None
-    debate_id: Optional[str] = None
-    member_name: Optional[str] = None
-
-# Turkish payment packages (Turkish Lira)
-PAYMENT_PACKAGES = {
-    "membership_monthly": {"amount": 850.0, "description": "Aylık Üyelik Ücreti"},
-    "membership_yearly": {"amount": 8500.0, "description": "Yıllık Üyelik Ücreti"},
-    "event_registration": {"amount": 500.0, "description": "Etkinlik Kayıt Ücreti"},
-    "donation_small": {"amount": 350.0, "description": "Küçük Bağış"},
-    "donation_medium": {"amount": 1750.0, "description": "Orta Bağış"},
-    "donation_large": {"amount": 3500.0, "description": "Büyük Bağış"}
-}
-
 # Authentication functions
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
@@ -175,6 +155,50 @@ async def get_current_admin(credentials: HTTPAuthorizationCredentials = Depends(
         return username
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Geçersiz kimlik doğrulama bilgileri")
+
+async def get_current_user(request: Request):
+    """Get current user from session cookie or Authorization header"""
+    session_token = None
+    
+    # Try to get from cookie first
+    session_token = request.cookies.get("session_token")
+    
+    # Fallback to Authorization header
+    if not session_token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            session_token = auth_header.split(" ")[1]
+    
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Kimlik doğrulama gerekli")
+    
+    # Verify session token in database
+    session = await db.sessions.find_one({"session_token": session_token})
+    if not session or session["expires_at"] < datetime.utcnow():
+        raise HTTPException(status_code=401, detail="Oturum süresi dolmuş")
+    
+    # Get user data
+    user = await db.users.find_one({"id": session["user_id"]})
+    if not user:
+        raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı")
+    
+    return User(**user)
+
+async def get_session_data_from_emergent(session_id: str):
+    """Get user data from Emergent Auth API"""
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": session_id}
+            ) as response:
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    return None
+        except Exception as e:
+            logging.error(f"Error getting session data from Emergent: {str(e)}")
+            return None
 
 # Bildirim gönderme fonksiyonu
 async def send_push_notification(payload: NotificationPayload):
@@ -204,10 +228,83 @@ async def admin_login(admin_data: AdminLogin):
         return {"access_token": access_token, "token_type": "bearer"}
     raise HTTPException(status_code=401, detail="Geçersiz kimlik bilgileri")
 
+@api_router.post("/auth/callback")
+async def auth_callback(request: Request, response: Response, session_id: str):
+    """Handle OAuth callback from Emergent Auth"""
+    try:
+        # Get user data from Emergent Auth API
+        user_data = await get_session_data_from_emergent(session_id)
+        if not user_data:
+            raise HTTPException(status_code=400, detail="Geçersiz oturum")
+        
+        # Check if user exists, if not create new user
+        existing_user = await db.users.find_one({"email": user_data["email"]})
+        if not existing_user:
+            # Create new user
+            user = User(
+                email=user_data["email"],
+                name=user_data["name"],
+                picture=user_data.get("picture"),
+                session_token=user_data["session_token"]
+            )
+            await db.users.insert_one(user.dict())
+            user_id = user.id
+        else:
+            user_id = existing_user["id"]
+        
+        # Create/update session
+        expires_at = datetime.utcnow() + timedelta(days=7)
+        session_record = {
+            "session_token": user_data["session_token"],
+            "user_id": user_id,
+            "created_at": datetime.utcnow(),
+            "expires_at": expires_at
+        }
+        
+        # Remove existing sessions for this user
+        await db.sessions.delete_many({"user_id": user_id})
+        await db.sessions.insert_one(session_record)
+        
+        # Set session cookie
+        response.set_cookie(
+            key="session_token",
+            value=user_data["session_token"],
+            max_age=7 * 24 * 60 * 60,  # 7 days
+            httponly=True,
+            secure=True,
+            samesite="none",
+            path="/"
+        )
+        
+        return {"message": "Giriş başarılı", "user": {"name": user_data["name"], "email": user_data["email"]}}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Giriş hatası: {str(e)}")
+
+@api_router.get("/auth/profile")
+async def get_user_profile(current_user: User = Depends(get_current_user)):
+    """Get current user profile"""
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "name": current_user.name,
+        "picture": current_user.picture
+    }
+
+@api_router.post("/auth/logout")
+async def logout(request: Request, response: Response):
+    """Logout user"""
+    session_token = request.cookies.get("session_token")
+    if session_token:
+        await db.sessions.delete_many({"session_token": session_token})
+    
+    response.delete_cookie("session_token", path="/")
+    return {"message": "Çıkış yapıldı"}
+
 # Debate Routes
 @api_router.post("/debates", response_model=Debate)
 async def create_debate(debate: DebateCreate, current_admin: str = Depends(get_current_admin)):
-    debate_obj = Debate(**debate.dict())
+    debate_obj = Debate(**debate.dict(), created_by=current_admin)
     await db.debates.insert_one(debate_obj.dict())
     
     # Yeni münazara bildirimi gönder
@@ -235,7 +332,7 @@ async def get_debate(debate_id: str):
 async def update_debate(debate_id: str, debate_update: DebateCreate, current_admin: str = Depends(get_current_admin)):
     existing_debate = await db.debates.find_one({"id": debate_id})
     if not existing_debate:
-        raise HTTPException(status_code=404, detail="Debate not found")
+        raise HTTPException(status_code=404, detail="Münazara bulunamadı")
     
     update_data = debate_update.dict()
     await db.debates.update_one({"id": debate_id}, {"$set": update_data})
@@ -332,17 +429,17 @@ async def vote_on_debate(vote: VoteRequest):
 async def join_debate(participant: ParticipantJoin):
     debate = await db.debates.find_one({"id": participant.debate_id})
     if not debate:
-        raise HTTPException(status_code=404, detail="Debate not found")
+        raise HTTPException(status_code=404, detail="Münazara bulunamadı")
     
     if participant.participant_name in debate.get("participants", []):
-        raise HTTPException(status_code=400, detail="Already joined this debate")
+        raise HTTPException(status_code=400, detail="Bu münazaraya zaten katıldınız")
     
     await db.debates.update_one(
         {"id": participant.debate_id}, 
         {"$push": {"participants": participant.participant_name}}
     )
     
-    return {"message": "Successfully joined the debate"}
+    return {"message": "Münazaraya başarıyla katıldınız"}
 
 # Comment Routes
 @api_router.post("/comments", response_model=Comment)
@@ -413,151 +510,6 @@ async def delete_photo(photo_id: str, current_admin: str = Depends(get_current_a
         raise HTTPException(status_code=404, detail="Photo not found")
     
     return {"message": "Photo deleted successfully"}
-
-# Payment Routes
-@api_router.get("/payments/packages")
-async def get_payment_packages():
-    return PAYMENT_PACKAGES
-
-@api_router.post("/payments/checkout/session")
-async def create_payment_session(request: Request, payment_request: PaymentRequest, current_admin: str = Depends(get_current_admin)):
-    if not stripe_api_key:
-        raise HTTPException(status_code=500, detail="Stripe API key not configured")
-    
-    # Package details with Turkish Lira
-    package_key = f"{payment_request.payment_type}"
-    if payment_request.payment_type == "donation" and payment_request.amount:
-        amount = payment_request.amount
-        description = f"Donation - ₺{amount}"
-    elif package_key in PAYMENT_PACKAGES:
-        amount = PAYMENT_PACKAGES[package_key]["amount"]
-        description = PAYMENT_PACKAGES[package_key]["description"]
-    else:
-        raise HTTPException(status_code=400, detail="Invalid payment package")
-    
-    # Setup Stripe
-    host_url = str(request.base_url).rstrip('/')
-    webhook_url = f"{host_url}/api/webhook/stripe"
-    stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
-    
-    # Create URLs
-    success_url = f"{host_url}/payments/success?session_id={{CHECKOUT_SESSION_ID}}"
-    cancel_url = f"{host_url}/payments/cancel"
-    
-    # Metadata
-    metadata = {
-        "payment_type": payment_request.payment_type,
-        "source": "debate_club",
-        "member_name": payment_request.member_name or "Unknown",
-        "debate_id": payment_request.debate_id or ""
-    }
-    
-    # Create checkout session
-    try:
-        checkout_request = CheckoutSessionRequest(
-            amount=amount,
-            currency="try",
-            success_url=success_url,
-            cancel_url=cancel_url,
-            metadata=metadata
-        )
-        
-        session = await stripe_checkout.create_checkout_session(checkout_request)
-        
-        # Create payment transaction record
-        transaction = PaymentTransaction(
-            session_id=session.session_id,
-            payment_type=payment_request.payment_type,
-            amount=amount,
-            currency="try",
-            payment_status="pending",
-            metadata=metadata
-        )
-        
-        await db.payment_transactions.insert_one(transaction.dict())
-        
-        return {"url": session.url, "session_id": session.session_id}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create payment session: {str(e)}")
-
-@api_router.get("/payments/checkout/status/{session_id}")
-async def get_payment_status(session_id: str, current_admin: str = Depends(get_current_admin)):
-    if not stripe_api_key:
-        raise HTTPException(status_code=500, detail="Stripe API key not configured")
-    
-    # Get from database first
-    transaction = await db.payment_transactions.find_one({"session_id": session_id})
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Payment transaction not found")
-    
-    # Check with Stripe
-    try:
-        host_url = "https://debatemaster.preview.emergentagent.com"
-        webhook_url = f"{host_url}/api/webhook/stripe"
-        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
-        
-        checkout_status = await stripe_checkout.get_checkout_status(session_id)
-        
-        # Update database if status changed
-        if checkout_status.payment_status != transaction["payment_status"]:
-            await db.payment_transactions.update_one(
-                {"session_id": session_id},
-                {
-                    "$set": {
-                        "payment_status": checkout_status.payment_status,
-                        "updated_at": datetime.utcnow()
-                    }
-                }
-            )
-        
-        return {
-            "session_id": session_id,
-            "payment_status": checkout_status.payment_status,
-            "status": checkout_status.status,
-            "amount": checkout_status.amount_total / 100,  # Convert from cents
-            "currency": checkout_status.currency
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get payment status: {str(e)}")
-
-@api_router.post("/webhook/stripe")
-async def stripe_webhook(request: Request):
-    if not stripe_api_key:
-        raise HTTPException(status_code=500, detail="Stripe API key not configured")
-    
-    try:
-        body = await request.body()
-        signature = request.headers.get("Stripe-Signature")
-        
-        host_url = "https://debatemaster.preview.emergentagent.com"
-        webhook_url = f"{host_url}/api/webhook/stripe"
-        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
-        
-        webhook_response = await stripe_checkout.handle_webhook(body, signature)
-        
-        # Update transaction in database
-        if webhook_response.session_id:
-            await db.payment_transactions.update_one(
-                {"session_id": webhook_response.session_id},
-                {
-                    "$set": {
-                        "payment_status": webhook_response.payment_status,
-                        "updated_at": datetime.utcnow()
-                    }
-                }
-            )
-        
-        return {"received": True}
-        
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
-
-@api_router.get("/payments/transactions", response_model=List[PaymentTransaction])
-async def get_payment_transactions(current_admin: str = Depends(get_current_admin)):
-    transactions = await db.payment_transactions.find().sort("created_at", -1).to_list(1000)
-    return [PaymentTransaction(**transaction) for transaction in transactions]
 
 @api_router.get("/")
 async def root():
