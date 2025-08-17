@@ -197,13 +197,24 @@ class DebateClubAPITester:
             "voter_name": "TestVoter1"  # Same voter name as before
         }
         
-        return self.run_test(
-            "Duplicate Vote (Should Fail)",
+        success, response = self.run_test(
+            "Duplicate Vote (Should Fail - Turkish Error)",
             "POST",
             "debates/vote",
             400,
             data=vote_data
         )
+        
+        # Check if error message is in Turkish and mentions "münazara"
+        if success and 'detail' in response:
+            expected_error = "Bu münazarada zaten oy kullandınız"
+            if response['detail'] == expected_error:
+                print(f"   ✅ Correct Turkish error message: {response['detail']}")
+                return True
+            else:
+                print(f"   ❌ Wrong error message: {response['detail']} (expected: {expected_error})")
+                return False
+        return success
 
     def test_join_debate(self):
         """Test joining a debate"""
