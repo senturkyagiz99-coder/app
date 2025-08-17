@@ -302,7 +302,7 @@ async def vote_on_debate(vote: VoteRequest):
     
     existing_vote = await db.votes.find_one({"debate_id": vote.debate_id, "voter_name": vote.voter_name})
     if existing_vote:
-        raise HTTPException(status_code=400, detail="Bu tartışmada zaten oy kullandınız")
+        raise HTTPException(status_code=400, detail="Bu münazarada zaten oy kullandınız")
     
     vote_record = {
         "id": str(uuid.uuid4()),
