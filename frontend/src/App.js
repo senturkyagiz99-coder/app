@@ -994,10 +994,10 @@ function App() {
                 <CardHeader>
                   <CardTitle className="text-red-700 flex items-center">
                     <Plus className="h-5 w-5 mr-2" />
-                    Yeni Tartışma Oluştur
+                    Yeni Münazara Oluştur
                   </CardTitle>
                   <CardDescription>
-                    Kulüp için tartışma konularını planlayın ve yönetin
+                    Kulüp için münazara konularını planlayın ve yönetin
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
