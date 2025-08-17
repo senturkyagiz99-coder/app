@@ -243,7 +243,207 @@ class DebateClubAPITester:
             return True
         return False
 
-    def test_unauthorized_create_debate(self):
+    def test_get_payment_packages(self):
+        """Test getting payment packages"""
+        success, response = self.run_test(
+            "Get Payment Packages",
+            "GET",
+            "payments/packages",
+            200
+        )
+        
+        if success and isinstance(response, dict):
+            print(f"   Found {len(response)} payment packages")
+            expected_packages = ['membership_monthly', 'membership_yearly', 'event_registration', 
+                               'donation_small', 'donation_medium', 'donation_large']
+            for package in expected_packages:
+                if package in response:
+                    print(f"   ✓ Package '{package}': ${response[package]['amount']}")
+                else:
+                    print(f"   ❌ Missing package: {package}")
+            return True
+        return False
+
+    def test_get_photos(self):
+        """Test getting photos"""
+        success, response = self.run_test(
+            "Get Photos",
+            "GET",
+            "photos",
+            200
+        )
+        
+        if success and isinstance(response, list):
+            print(f"   Found {len(response)} photos")
+            return True
+        return False
+
+    def test_photo_upload_unauthorized(self):
+        """Test photo upload without admin token"""
+        # Temporarily remove token
+        original_token = self.token
+        self.token = None
+        
+        # Create a simple test image file
+        test_image_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\tpHYs\x00\x00\x0b\x13\x00\x00\x0b\x13\x01\x00\x9a\x9c\x18\x00\x00\x00\nIDATx\x9cc\xf8\x00\x00\x00\x01\x00\x01\x00\x00\x00\x00IEND\xaeB`\x82'
+        
+        files = {'file': ('test.png', io.BytesIO(test_image_data), 'image/png')}
+        data = {
+            'title': 'Test Photo',
+            'description': 'Test Description',
+            'event_date': '2025-01-01'
+        }
+        
+        url = f"{self.api_url}/photos/upload"
+        headers = {}
+        
+        self.tests_run += 1
+        print(f"\n🔍 Testing Photo Upload (Unauthorized)...")
+        
+        try:
+            response = requests.post(url, files=files, data=data, headers=headers, timeout=10)
+            success = response.status_code == 401
+            if success:
+                self.tests_passed += 1
+                print(f"✅ Passed - Status: {response.status_code}")
+            else:
+                print(f"❌ Failed - Expected 401, got {response.status_code}")
+        except Exception as e:
+            print(f"❌ Failed - Error: {str(e)}")
+            success = False
+        
+        # Restore token
+        self.token = original_token
+        return success
+
+    def test_photo_upload_authorized(self):
+        """Test photo upload with admin token"""
+        if not self.token:
+            print("❌ No admin token available for photo upload test")
+            return False
+            
+        # Create a simple test image file
+        test_image_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\tpHYs\x00\x00\x0b\x13\x00\x00\x0b\x13\x01\x00\x9a\x9c\x18\x00\x00\x00\nIDATx\x9cc\xf8\x00\x00\x00\x01\x00\x01\x00\x00\x00\x00IEND\xaeB`\x82'
+        
+        files = {'file': ('test.png', io.BytesIO(test_image_data), 'image/png')}
+        data = {
+            'title': 'Test Photo Upload',
+            'description': 'Test photo description for API testing',
+            'event_date': '2025-01-15'
+        }
+        
+        url = f"{self.api_url}/photos/upload"
+        headers = {'Authorization': f'Bearer {self.token}'}
+        
+        self.tests_run += 1
+        print(f"\n🔍 Testing Photo Upload (Authorized)...")
+        
+        try:
+            response = requests.post(url, files=files, data=data, headers=headers, timeout=10)
+            success = response.status_code == 200
+            if success:
+                self.tests_passed += 1
+                print(f"✅ Passed - Status: {response.status_code}")
+                try:
+                    response_data = response.json()
+                    print(f"   Response: {json.dumps(response_data, indent=2)}")
+                    return True, response_data
+                except:
+                    return True, {}
+            else:
+                print(f"❌ Failed - Expected 200, got {response.status_code}")
+                try:
+                    error_data = response.json()
+                    print(f"   Error: {error_data}")
+                except:
+                    print(f"   Error: {response.text}")
+        except Exception as e:
+            print(f"❌ Failed - Error: {str(e)}")
+        
+        return False
+
+    def test_payment_session_unauthorized(self):
+        """Test payment session creation without admin token"""
+        # Temporarily remove token
+        original_token = self.token
+        self.token = None
+        
+        payment_data = {
+            "payment_type": "membership_monthly",
+            "member_name": "Test User"
+        }
+        
+        success, _ = self.run_test(
+            "Create Payment Session (Unauthorized)",
+            "POST",
+            "payments/checkout/session",
+            401,
+            data=payment_data
+        )
+        
+        # Restore token
+        self.token = original_token
+        return success
+
+    def test_payment_session_authorized(self):
+        """Test payment session creation with admin token"""
+        if not self.token:
+            print("❌ No admin token available for payment session test")
+            return False
+            
+        payment_data = {
+            "payment_type": "membership_monthly",
+            "member_name": "Test User"
+        }
+        
+        success, response = self.run_test(
+            "Create Payment Session (Authorized)",
+            "POST",
+            "payments/checkout/session",
+            200,
+            data=payment_data
+        )
+        
+        if success and 'session_id' in response and 'url' in response:
+            print(f"   Session ID: {response['session_id']}")
+            print(f"   Checkout URL: {response['url'][:50]}...")
+            return True
+        return False
+
+    def test_payment_transactions_unauthorized(self):
+        """Test getting payment transactions without admin token"""
+        # Temporarily remove token
+        original_token = self.token
+        self.token = None
+        
+        success, _ = self.run_test(
+            "Get Payment Transactions (Unauthorized)",
+            "GET",
+            "payments/transactions",
+            401
+        )
+        
+        # Restore token
+        self.token = original_token
+        return success
+
+    def test_payment_transactions_authorized(self):
+        """Test getting payment transactions with admin token"""
+        if not self.token:
+            print("❌ No admin token available for payment transactions test")
+            return False
+            
+        success, response = self.run_test(
+            "Get Payment Transactions (Authorized)",
+            "GET",
+            "payments/transactions",
+            200
+        )
+        
+        if success and isinstance(response, list):
+            print(f"   Found {len(response)} payment transactions")
+            return True
+        return False
         """Test creating debate without admin token"""
         # Temporarily remove token
         original_token = self.token
