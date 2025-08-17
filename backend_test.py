@@ -67,19 +67,29 @@ class DebateClubAPITester:
         return self.run_test("Root API Endpoint", "GET", "", 200)
 
     def test_admin_login(self):
-        """Test admin login with correct credentials"""
+        """Test admin login with NEW credentials"""
         success, response = self.run_test(
-            "Admin Login",
+            "Admin Login (New Credentials)",
             "POST",
             "admin/login",
             200,
-            data={"username": "admin", "password": "debateclub123"}
+            data={"username": "debateclub2025", "password": "onlinedebate"}
         )
         if success and 'access_token' in response:
             self.token = response['access_token']
             print(f"   Token obtained: {self.token[:20]}...")
             return True
         return False
+
+    def test_old_admin_login(self):
+        """Test old admin login should fail"""
+        return self.run_test(
+            "Old Admin Login (Should Fail)",
+            "POST",
+            "admin/login",
+            401,
+            data={"username": "admin", "password": "debateclub123"}
+        )
 
     def test_admin_login_invalid(self):
         """Test admin login with invalid credentials"""
