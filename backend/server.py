@@ -367,7 +367,7 @@ async def create_payment_session(request: Request, payment_request: PaymentReque
     try:
         checkout_request = CheckoutSessionRequest(
             amount=amount,
-            currency="usd",
+            currency="try",
             success_url=success_url,
             cancel_url=cancel_url,
             metadata=metadata
