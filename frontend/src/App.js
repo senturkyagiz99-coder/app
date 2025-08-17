@@ -819,7 +819,7 @@ function App() {
               <CardHeader>
                 <CardTitle className="text-red-700 flex items-center">
                   <Calendar className="h-5 w-5 mr-2" />
-                  Tartışma Programı
+                  Münazara Programı
                 </CardTitle>
               </CardHeader>
               <CardContent>
