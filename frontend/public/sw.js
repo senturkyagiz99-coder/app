@@ -131,7 +131,7 @@ self.addEventListener('push', (event) => {
     actions: [
       {
         action: 'open',
-        title: 'Tartışmaları Görüntüle',
+        title: 'Münazaraları Görüntüle',
         icon: '/icon-192x192.png'
       },
       {
